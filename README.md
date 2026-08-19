@@ -1,196 +1,108 @@
-# Stream2Podcast
+# radiotimer
 
-[![.github/workflows/prod_recording_service.yml](https://github.com/holstt/stream2podcast/actions/workflows/prod_recording_service.yml/badge.svg)](https://github.com/holstt/stream2podcast/actions/workflows/prod_recording_service.yml)
-[![.github/workflows/prod_feed_service.yml](https://github.com/holstt/stream2podcast/actions/workflows/prod_feed_service.yml/badge.svg)](https://github.com/holstt/stream2podcast/actions/workflows/prod_feed_service.yml)
+Self-hosted web service that records web radio shows on a schedule. Successor
+to the old "vlc timer" (Qt/Windows). Built on FastAPI + APScheduler + ffmpeg,
+with a small vanilla-JS web UI.
 
-Stream2Podcast lets you record audio streams (e.g. live radio) and automatically generate podcast feeds from the recordings.
+> Forked from [holstt/stream2podcast](https://github.com/holstt/stream2podcast)
+> but has since diverged significantly: it is now a single service with a web UI
+> and SQLite store, uses ffmpeg for recording, and no longer generates podcast
+> feeds as its primary purpose.
 
 ## Features
 
--   **Record and save**
-    -   Record a HTTP audio stream and save it to disk. Works with audio streams following either ICY or HLS protocol.
--   **Create recording schedules**
-    -   Create multiple recording schedules to record at different time periods throughout the day
--   **Generate RSS feeds**
-    -   Generate a podcast RSS feed from the recordings produced by each schedule (i.e. turns a recording schedule into a podcast with each recording representing an episode)
--   **Publish as podcast**
-    -   The output of `stream2podcast` makes it simple to set up a webserver (e.g. [Nginx](https://www.nginx.com/)) to serve the static files (RSS feed file + recordings) from the root of the output directory.
--   **Docker support**
-    -   Easy deployment using Docker Compose
+- Schedule recordings of HTTP audio streams (ICY/HLS, `.m3u`/`.pls` playlists
+  are resolved automatically) per station.
+- Web UI to manage stations and schedules, show live status, and browse
+  recordings with player + download.
+- Live / timeshift playback of a recording that is still in progress.
+- ffmpeg-based capture with reconnect and a clean SIGTERM stop (`-t`).
+- SQLite persistence; Server-Sent-Events push UI updates (no polling).
+- Optional podcast RSS feed (`/api/podcast`) for phone playback.
 
-## Getting Started
+## Requirements
 
-**1. Clone the repository**:
+- Python 3.11
+- `ffmpeg` available on `PATH`
 
-```
-git clone https://github.com/holstt/stream2podcast.git
-cd stream2podcast
-```
-
-**2. Set up configuration**
-
-The project consists of two services: `recording-service` and `feed-service`. The `recording-service` is responsible for recording the audio streams and storing them on disk, while the `feed-service` is responsible for generating podcast RSS feeds based on these recordings. The two services run separately and are fully independent of each other. `feed-service` is simply monitoring the output directory of the `recording-service` for any changes. When a new recording file is added (and recording has finished), the `feed-service` registers the change and updates the RSS feed for that particular podcast. Please see the [Output](https://github.com/holstt/stream2podcast#output) section for more information.
-
-**2.1. Configure recording-service**
-
-`./recording-service/config.example.yml` provides an example of the required configuration format:
-
-```yaml
-stream_url: "https://example.com"
-output_dir: "../recordings" # Directory where recordings should be saved
-time_zone: "Europe/Berlin" # IANA time zone name. See https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
-
-# Specify one or more recording schedules
-recording_schedules:
-    - title: "morning program every weekday" # Will be used as the title of the podcast feed
-      start_timeofday: "06:15" # Time as HH:MM (24-hour clock) in the specified time zone
-      end_timeofday: "07:00"
-
-      frequency: "mon, tue, wed, thu, fri" # Optional, defaults to '*' i.e. every day
-      description: "This is a morning program" # Optional, will be used as the podcast description when generating the feed
-      image_url: "https://example.com/image.png" # Optional, will be used as the podcast image when generating the feed
-
-    - title: "afternoon program every weekday"
-      start_timeofday: "13:05"
-      end_timeofday: "14:00"
-      frequency: "mon-fri" # Optional
-
-    - title: "evening program on tuesdays and fridays"
-      start_timeofday: "19:30"
-      end_timeofday: "21:00"
-      frequency: "tue, fri" # Optional
-```
-
-Rename the file to `config.yml` and adapt the configuration to your use case. Recording schedules are allowed to overlap, as the service supports parallel recording. If the service is started during a recording schedule, recording will start immediately.
-
-`frequency` is a **day-of-week** cron expression which also supports abbreviated names (e.g. `"mon, tue, wed, thu, fri"` or `"mon-fri"`).
-
-**2.2. Configure feed-service**
-
-`./feed-service/config.example.yml` provides an example of the required configuration format:
-
-```yaml
-# Directory where feed-service should look for recordings.
-base_dir: "../recordings"
-
-# Base URL where the podcast feeds are served from
-base_url: "https://podcasts.mydomain.com/"
-
-# OPTIONAL: Whether to update feeds on startup. Defaults to false.
-should_update_feeds_on_startup: true
-```
-
-Rename the file to `config.yml` and adapt the configuration to your use case.
-
-`base_dir` should be set to the output directory used by `recording-service` (or any directory, as long as the contained files follows the file structure and name pattern specified in the **Usage** section). This directory will be monitored for changes, and the podcast feeds will be updated accordingly. A feed update is only triggered if a file change is registered and then no other changes occur for that file the next 5 minutes. This ensures that a feed update is not triggered while a recording is still in progress.
-
-`base_url` is used to generate the episode URLs in the podcast feed, which will be in the format `https://<base_url>/<podcast_title>/<episode_filename>`.
-
-Once the configuration files are set up, you can either run the program locally or using Docker Compose (see below).
-
-## Local Installation 💻
-
-\*Requires the [Poetry](https://python-poetry.org/docs/) package manager
-
-First, cd into either `./recording-service` or `./feed-service` depending on which service you want to run.
-
-**3. Install dependencies and create a virtual environment**
+## Quick start (local)
 
 ```bash
-poetry install
+cd recording-service
+pip install -r requirements.txt -r requirements-dev.txt
+python main.py            # serves http://0.0.0.0:8000
 ```
 
-**4. Activate the virtual environment**
+Configuration is via environment variables (see below); no config file is
+required.
+
+## Configuration (environment variables)
+
+| Variable               | Default                                 | Purpose                                 |
+|------------------------|-----------------------------------------|-----------------------------------------|
+| `RADIOTIMER_OUTPUT`    | `./recordings`                          | Where recordings are written            |
+| `RADIOTIMER_DB`        | `./app.db`                              | SQLite database path                    |
+| `RADIOTIMER_TZ`        | `Europe/Berlin`                         | Time zone for schedules / cron          |
+| `RADIOTIMER_PATTERN`   | `{station}/{title}/{date} {start_hm}.{ext}` | Output path pattern                 |
+| `RADIOTIMER_REENCODE`  | `false`                                 | Re-encode instead of stream copy        |
+| `RADIOTIMER_PUBLIC_URL`| (unset)                                 | Public base URL for podcast enclosures  |
+
+## Deployment
+
+### Docker
 
 ```bash
-poetry shell
+docker compose up -d
 ```
 
-**5. Run the project**
+Builds the image (Debian-slim + ffmpeg), exposes port 8000, mounts `./recordings`
+and `./data`, and passes the `RADIOTIMER_*` env vars configured in
+`docker-compose.yml`.
 
-```
-python ./main.py
-```
-
--   You can specify a custom path for your configuration file using `./main.py -c path/to/config.yml`
-
-## Docker 🐳
-
-\*Requires [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/)
-
-**3. From project root, navigate to the `./docker` folder**
-
-```
-cd docker
-```
-
-**4. Option 1: Simple setup**
-
-Ensure the paths in `docker-compose.yml` are correct, then run:
+### Raspberry Pi (native)
 
 ```bash
-docker-compose up -d
-# or
-docker-compose up -d && docker-compose logs -f
+sudo bash deploy/raspberrypi/install.sh
 ```
 
-**4. Option 2: Use helper script**
+Installs a systemd `radiotimer` service and optionally Samba (SMB share) and an
+nginx reverse proxy. Copy `deploy/raspberrypi/.env.example` to `.env` and adjust
+paths / time zone before running.
 
-The `docker_run.py` helper script can be used to set up and run the docker project as the current user (rather than defaulting to root). Furthermore, the helper script ensures that host paths and permissions are set up correctly, and configures `docker-compose.yml` using environment variables. Configuration is set using a `.ini` file - please refer to `example.ini` for an example of the required format.
+## Using the web UI
 
-Then run:
+Add a **station** (name + stream URL) and one or more **schedules** (start/end
+time, weekday frequency, audio format). Active recordings show a green dot; the
+running show can be paused and its live stream opened directly from the UI.
 
-```bash
-python docker_run.py path/to/your/config.ini
-```
+## Live playback & podcast feed
 
-## Output
+- Currently-recording files are served as a live HTTP stream:
+  `GET /api/recordings/play?path=<relative-path>`. Open this URL in a player
+  (e.g. VLC) rather than the raw SMB file, which would hang on a growing file.
+- `GET /api/podcast?folder=` returns an RSS feed of recordings for phone
+  playback. Set `RADIOTIMER_PUBLIC_URL` when the service sits behind a proxy.
 
-### recording-service
+## Error logs
 
-The `recording-service` automatically starts recording the audio stream following the recording schedules as specified in `./recording-service/config.yml`. The service creates a new directory for each recording schedule for storing the recordings produced by that schedule together with a metadata file.
+ffmpeg's stderr is captured in memory; a `<recording>.error.txt` file is written
+next to the recording **only** when ffmpeg exits with a failure code.
 
-The file structure of the output directory is as follows:
+## API overview
 
-```bash
-<output_dir>/
-│
-├── <recording_schedule_1>/
-│   ├── <recording_1>
-│   ├── <recording_2>
-│   ├── ...
-│   └── metadata.yml
-│
-├── <recording_schedule_2>/
-│   └── ...
-└── ...
-```
+| Method                | Path                          | Purpose              |
+|-----------------------|-------------------------------|----------------------|
+| GET/POST/PUT/DELETE   | `/api/stations` (+ `/{id}`)   | Station CRUD         |
+| GET                   | `/api/stations/{id}/open`     | Open station stream  |
+| GET/POST/PUT/DELETE   | `/api/schedules` (+ `/{id}`)  | Schedule CRUD        |
+| GET                   | `/api/status`                 | Running recordings   |
+| GET                   | `/api/recordings`             | Recordings tree      |
+| GET                   | `/api/recordings/play`        | Live / timeshift stream |
+| GET                   | `/api/events`                 | SSE (state / ping)   |
+| GET                   | `/api/podcast`                | RSS feed             |
 
-The name of a recording file follows the parsable and URL-friendly format:
-
-`<date>--<start_time>-<end_time>--<name_of_recording>--<uuid>.mp3|mp4`
-
--   `<date>`: Date of recording in the format YYYY-MM-DD
--   `<start_time>`: Start time (UTC) of recording in the format HHMM (i.e. this can vary from the start time specified in the configuration file, if the service is started during a recording schedule)
--   `<end_time>`: End time (UTC) of recording in the format HHMM
--   `<name_of_recording>`: Sluggified name of the recording. (currently this is the same as the name of the recording schedule/podcast name)
--   `<uuid>`: A universally unique identifier (UUID)
--   `.mp3|mp4`: The file format, either .mp3 or .mp4
-
-Example: `2023-04-03--1230-1400--recording-name--ee1ad7c6-95bf-4116-a1f8-060053e80a73.mp3`
-
-### feed-service
-
-Based on the files generated by the `recording-service` the `feed-service` is able to generate the corresponding podcast feeds. `feed-service` generates a podcast feed for each _recording schedule_, where each episode in the feed corresponds to a recording produced by that schedule. The resulting `feed.rss` file is saved in the same directory as the recordings. As such, the file structure of the output directory ends up looking like this:
+## Tests
 
 ```bash
-<output_dir>/
-│
-├── <recording_schedule_1>/
-│   ├── <recording_1>
-│   ├── <recording_2>
-│   ├── ...
-│   ├── metadata.yml
-│   └── feed.rss # <-- added by feed-service
-└── ...
+cd recording-service && pytest        # pytest.ini sets asyncio_mode=auto
 ```
