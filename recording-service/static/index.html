@@ -93,7 +93,7 @@
         tr.innerHTML = `
           <td>${r.name}</td>
           <td>${(r.size / 1024 / 1024).toFixed(1)} MB</td>
-          <td><audio controls src="${r.url}"></audio> <a href="${r.url}">Download</a></td>`;
+          <td><a href="${r.url}" onclick="window.open(this.href,'player','width=420,height=220');return false;">Abspielen</a></td>`;
         tb.appendChild(tr);
       }
     }
