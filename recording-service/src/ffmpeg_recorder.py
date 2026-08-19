@@ -16,15 +16,18 @@ async def record(
     duration_seconds: float,
     output_path: Path,
     stop_event: Optional[asyncio.Event] = None,
+    ffmpeg_bin: str = "ffmpeg",
 ) -> None:
     """Record a stream with ffmpeg for the given duration.
 
     ffmpeg is asked to reconnect on dropouts and to stop cleanly after the
     duration. If stop_event is set, the process is terminated early via SIGTERM
     (ffmpeg then finalises the file instead of being killed hard).
+
+    ``ffmpeg_bin`` is the ffmpeg executable (overridable for testing).
     """
     cmd = [
-        "ffmpeg",
+        ffmpeg_bin,
         "-y",
         "-reconnect",
         "1",
@@ -76,6 +79,10 @@ async def _wait_with_stop(
     if proc.returncode is None:
         # Ask ffmpeg to finalise and exit cleanly (SIGTERM), not SIGKILL.
         proc.terminate()
+        try:
+            await proc.wait()
+        except Exception:
+            pass
 
 
 def is_active(run_id: str) -> bool:

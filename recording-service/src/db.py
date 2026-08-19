@@ -2,11 +2,11 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Optional
 
-from src.settings import DB_PATH
+from src import settings
 
 
 def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(settings.DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 

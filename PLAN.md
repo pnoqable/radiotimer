@@ -21,6 +21,17 @@ Docker). Upstream-History bleibt erhalten (Remote `upstream`).
 Getestet lokal (macOS, venv): Scheduler lädt Sendungen aus der DB und berechnet
 `next_run` korrekt (mo–fr 20:00 MESZ → 18:00 UTC).
 
+### Tests (Qualitätssicherung)
+
+- [x] `tests/test_schedule_builder.py` — Zeitzonen-Umrechnung (lokal→UTC), Dauer inkl.
+      Mitternacht-Übergang, pro-Sendung-URL, Ausgabeordner.
+- [x] `tests/test_db.py` — SQLite-CRUD (create/list/get/update/delete).
+- [x] `tests/test_ffmpeg_recorder.py` — ffmpeg-Wrapper erzeugt Ausgabedatei und
+      bricht via SIGTERM/Stop-Event frühzeitig ab (mit Fake-ffmpeg-Stub, kein echtes ffmpeg nötig).
+
+Ausführen: `cd recording-service && pip install -r requirements.txt -r requirements-dev.txt && pytest`
+(`pytest-asyncio` nötig; `pytest.ini` setzt `asyncio_mode = auto`.)
+
 ## Ausgangslage & Lücken im Basis-Projekt
 
 stream2podcast kann bereits: Zeitpläne (APScheduler/cron), ICY- und HLS-Streams,
