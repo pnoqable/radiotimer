@@ -2,7 +2,7 @@ import argparse
 import logging
 import time
 from datetime import datetime
-from typing import Any, Dict, Type, TypeVar, Union, overload
+from typing import Any, Dict, Optional, Type, TypeVar, Union, overload
 
 import pendulum
 from pendulum import DateTime, Duration, Period, Time  # type: ignore
@@ -134,7 +134,7 @@ class CountdownTimer:
         super().__init__()
         self.duration_total = duration
         self._time_provider = time_provider
-        self._start_time: DateTime | None = None
+        self._start_time: Optional[DateTime] = None
 
     def start(self) -> None:
         if self._start_time is not None:

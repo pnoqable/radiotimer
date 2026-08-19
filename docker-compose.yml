@@ -1,0 +1,14 @@
+services:
+  radiotimer:
+    build: .
+    container_name: radiotimer
+    ports:
+      - "8000:8000"
+    environment:
+      RADIOTIMER_OUTPUT: /app/recordings
+      RADIOTIMER_DB: /app/data/radiotimer.db
+      RADIOTIMER_TZ: Europe/Berlin
+    volumes:
+      - ./recordings:/app/recordings
+      - ./data:/app/data
+    restart: unless-stopped

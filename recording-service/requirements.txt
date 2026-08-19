@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pendulum>=2.1.2,<3
+apscheduler
+croniter
+python-slugify
+pyyaml
+aiohttp
+validators
+mutagen
+pytz
