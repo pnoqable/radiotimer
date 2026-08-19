@@ -7,19 +7,19 @@ from slugify import slugify
 from src import utils
 from src.config import _parse_start_time_and_duration  # type: ignore
 from src.models import RecordingSchedule, ValidUrl
-from src.settings import OUTPUT_DIR, TIME_ZONE
+from src import settings
 
 
 def build_schedule(row: dict[str, Any]) -> RecordingSchedule:
     """Build a domain RecordingSchedule from a DB row."""
-    user_tz = pendulum.timezone(TIME_ZONE)
+    user_tz = pendulum.timezone(settings.TIME_ZONE)
 
     start_utc, duration = _parse_start_time_and_duration(
         row["start_time"], row["end_time"], user_tz
     )
 
     subdir = row.get("subdir") or slugify(row["title"])
-    schedule_dir = OUTPUT_DIR / subdir
+    schedule_dir = settings.OUTPUT_DIR / subdir
 
     audio_format = row.get("audio_format", "mp3")
     frequency = row.get("frequency", "*")
