@@ -5,6 +5,22 @@ Webradiosendungen nach Zeitplan — Nachfolger des alten "vlc timer"
 (Qt/Windows). Basis: Fork von `holstt/stream2podcast` (Python, APScheduler,
 Docker). Upstream-History bleibt erhalten (Remote `upstream`).
 
+## Aktueller Stand (implementiert)
+
+- [x] **Phase 1**: Repo als Fork (`upstream` → holstt/stream2podcast), Smoke-Test grün.
+- [x] **Phase 2**: Recording-Kern auf **ffmpeg** umgestellt (`src/ffmpeg_recorder.py`,
+      Reconnect + sauberes SIGTERM-Ende via `-t`).
+- [x] **Phase 3**: **Eigene `stream_url` pro Sendung** (`models.py`, `schedule_builder.py`).
+- [x] **Phase 4**: **SQLite**-Store (`src/db.py`) + **FastAPI-API** (CRUD, Status, Recordings).
+- [x] **Phase 5**: **Schlanke Web-UI** (`static/index.html`): anlegen/bearbeiten/löschen,
+      Live-Status, Aufnahmen-Liste mit Player/Download.
+- [x] **Phase 6 (Teil)**: Docker-Single-Service mit ffmpeg (`Dockerfile`, `docker-compose.yml`);
+      `feed-service` entfernt. Windows-Anleitung steht noch aus.
+- [ ] **Phase 7**: Polish (Retention, Fehler-Alerts, Windows-README, Tests).
+
+Getestet lokal (macOS, venv): Scheduler lädt Sendungen aus der DB und berechnet
+`next_run` korrekt (mo–fr 20:00 MESZ → 18:00 UTC).
+
 ## Ausgangslage & Lücken im Basis-Projekt
 
 stream2podcast kann bereits: Zeitpläne (APScheduler/cron), ICY- und HLS-Streams,

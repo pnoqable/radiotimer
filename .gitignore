@@ -1,9 +1,14 @@
 # CUSTOM
-recordings
+recordings/
+data/
+*.db
+app.db
+.DS_Store
 .vscode
 temp*
-*config*
-*.ini
+/config.yml
+/config.local.yml
+config.ini
 *.pickle
 
 !*example*

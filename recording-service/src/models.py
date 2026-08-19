@@ -32,10 +32,10 @@ class RecordingTask:
     recording_period: TimePeriod
     base_dir: Path
     audio_format: str
+    stream_url: ValidUrl
     file_path: Path = field(init=False)  # The file path to save the recording to
     # duration: Duration
     id: uuid.UUID = field(default_factory=lambda: uuid.uuid4())
-    # XXX: stream_url?
 
     def __post_init__(self):
         file_path = self._make_file_path(
@@ -96,6 +96,7 @@ class RecordingSchedule:
     description: Optional[str] = None
     image_url: Optional[ValidUrl] = None
     frequency: str = "*"  # Defaults to "daily" cron expression
+    stream_url: Optional[ValidUrl] = None
 
     @property
     def end_timeofday(self) -> Time:
@@ -126,6 +127,7 @@ class RecordingSchedule:
             recording_period=recording_period,
             base_dir=self.output_dir,
             audio_format=self.audio_format,
+            stream_url=self.stream_url,  # type: ignore
         )
 
     def resolve_recording_period(self, recording_start_time: DateTime) -> TimePeriod:

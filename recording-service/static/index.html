@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>radiotimer</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 900px; }
+    h1 { margin-bottom: .25rem; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid #8884; }
+    form { display: grid; grid-template-columns: repeat(2, 1fr); gap: .5rem; margin-top: 1rem; }
+    form label { display: flex; flex-direction: column; font-size: .8rem; }
+    input, select { padding: .35rem; }
+    button { padding: .4rem .8rem; cursor: pointer; }
+    .running { color: #2a2; font-weight: bold; }
+    .row-actions button { margin-right: .3rem; }
+    audio { width: 220px; height: 32px; }
+    .card { border: 1px solid #8884; border-radius: 8px; padding: 1rem; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>radiotimer</h1>
+  <p>Automatische Aufnahme von Webradiosendungen nach Zeitplan (ffmpeg).</p>
+
+  <div class="card">
+    <h2>Sendung</h2>
+    <form id="schedule-form">
+      <input type="hidden" id="id" />
+      <label>Titel<input id="title" required /></label>
+      <label>Stream-URL<input id="stream_url" required placeholder="https://..." /></label>
+      <label>Start (HH:MM)<input id="start_time" required placeholder="20:00" /></label>
+      <label>Ende (HH:MM)<input id="end_time" required placeholder="21:00" /></label>
+      <label>Wochentage<input id="frequency" placeholder="* oder mon-fri, tue,fri" /></label>
+      <label>Format<select id="audio_format"><option value="mp3">mp3</option><option value="mp4">mp4</option></select></label>
+      <label>Ordner (subdir)<input id="subdir" required placeholder="meine-sendung" /></label>
+      <label>Beschreibung<input id="description" /></label>
+      <button type="submit" id="submit-btn">Speichern</button>
+      <button type="button" id="reset-btn">Abbrechen</button>
+    </form>
+  </div>
+
+  <h2>Geplante Sendungen</h2>
+  <table id="schedules">
+    <thead><tr><th>Titel</th><th>Stream</th><th>Zeit</th><th>Tage</th><th>Status</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <h2>Aufnahmen</h2>
+  <table id="recordings">
+    <thead><tr><th>Datei</th><th>Größe</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    async function loadSchedules() {
+      const res = await fetch("/api/schedules");
+      const rows = await res.json();
+      const status = await (await fetch("/api/status")).json();
+      const running = new Set(status.jobs.filter(j => j.running).map(j => j.id));
+      const tb = $("schedules").querySelector("tbody");
+      tb.innerHTML = "";
+      for (const r of rows) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${r.title}</td>
+          <td>${r.stream_url}</td>
+          <td>${r.start_time}–${r.end_time}</td>
+          <td>${r.frequency}</td>
+          <td>${running.has(r.id) ? '<span class="running">● läuft</span>' : (r.enabled ? "geplant" : "pausiert")}</td>
+          <td class="row-actions">
+            <button data-edit="${r.id}">Bearbeiten</button>
+            <button data-del="${r.id}">Löschen</button>
+            ${running.has(r.id) ? `<button data-stop="${r.id}">Stop</button>` : ""}
+          </td>`;
+        tb.appendChild(tr);
+      }
+      tb.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => editSchedule(b.dataset.edit));
+      tb.querySelectorAll("[data-del]").forEach(b => b.onclick = () => delSchedule(b.dataset.del));
+      tb.querySelectorAll("[data-stop]").forEach(b => b.onclick = () => stopSchedule(b.dataset.stop));
+    }
+
+    async function loadRecordings() {
+      const res = await fetch("/api/recordings");
+      const data = await res.json();
+      const tb = $("recordings").querySelector("tbody");
+      tb.innerHTML = "";
+      for (const r of data.recordings) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${r.name}</td>
+          <td>${(r.size / 1024 / 1024).toFixed(1)} MB</td>
+          <td><audio controls src="${r.url}"></audio> <a href="${r.url}">Download</a></td>`;
+        tb.appendChild(tr);
+      }
+    }
+
+    async function editSchedule(id) {
+      const r = await (await fetch("/api/schedules/" + id)).json();
+      $("id").value = r.id;
+      $("title").value = r.title;
+      $("stream_url").value = r.stream_url;
+      $("start_time").value = r.start_time;
+      $("end_time").value = r.end_time;
+      $("frequency").value = r.frequency;
+      $("audio_format").value = r.audio_format;
+      $("subdir").value = r.subdir;
+      $("description").value = r.description || "";
+      $("submit-btn").textContent = "Aktualisieren";
+    }
+
+    function resetForm() {
+      $("schedule-form").reset();
+      $("id").value = "";
+      $("submit-btn").textContent = "Speichern";
+    }
+
+    async function delSchedule(id) {
+      if (!confirm("Sendung löschen?")) return;
+      await fetch("/api/schedules/" + id, { method: "DELETE" });
+      loadSchedules();
+    }
+
+    async function stopSchedule(id) {
+      await fetch("/api/recordings/" + id + "/stop", { method: "POST" });
+      loadSchedules();
+    }
+
+    $("schedule-form").onsubmit = async (e) => {
+      e.preventDefault();
+      const id = $("id").value;
+      const payload = {
+        title: $("title").value,
+        stream_url: $("stream_url").value,
+        start_time: $("start_time").value,
+        end_time: $("end_time").value,
+        frequency: $("frequency").value || "*",
+        audio_format: $("audio_format").value,
+        subdir: $("subdir").value,
+        description: $("description").value,
+      };
+      if (id) {
+        await fetch("/api/schedules/" + id, { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
+      } else {
+        await fetch("/api/schedules", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
+      }
+      resetForm();
+      loadSchedules();
+    };
+
+    $("reset-btn").onclick = resetForm;
+
+    loadSchedules();
+    loadRecordings();
+    setInterval(() => { loadSchedules(); loadRecordings(); }, 15000);
+  </script>
+</body>
+</html>

@@ -114,7 +114,9 @@ class RecordingSchedulerService:
         )
 
         try:
-            await self._recorder.record_audio_task(task, recording_schedule.metadata)
+            await self._recorder.record_audio_task(
+                task, recording_schedule.metadata, run_id=str(recording_schedule.id)
+            )
             logger.info(f"Recording task complete: {task}")
 
         except Exception as e:
