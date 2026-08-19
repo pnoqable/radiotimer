@@ -87,9 +87,29 @@
       const res = await fetch("/api/recordings");
       const data = await res.json();
       const tb = $("recordings").querySelector("tbody");
-      tb.innerHTML = "";
+
+      const current = new Set(data.recordings.map((r) => r.path));
+
+      // Update existing rows in place (preserves the <audio> element so
+      // playback is not interrupted), only add new rows and drop removed ones.
+      const existing = new Map();
+      for (const tr of tb.querySelectorAll("tr")) {
+        const key = tr.dataset.key;
+        if (current.has(key)) {
+          existing.set(key, tr);
+          const rec = data.recordings.find((r) => r.path === key);
+          // Refresh the size text without touching the audio control.
+          tr.children[1].textContent =
+            (rec.size / 1024 / 1024).toFixed(1) + " MB";
+        } else {
+          tr.remove();
+        }
+      }
+
       for (const r of data.recordings) {
+        if (existing.has(r.path)) continue;
         const tr = document.createElement("tr");
+        tr.dataset.key = r.path;
         tr.innerHTML = `
           <td>${r.name}</td>
           <td>${(r.size / 1024 / 1024).toFixed(1)} MB</td>
