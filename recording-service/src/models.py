@@ -57,9 +57,10 @@ class RecordingTask:
         )
         path = self.base_dir / rel
         # Avoid overwriting an existing recording (e.g. on a reconnect or a
-        # server restart): append a sequential number before the extension.
+        # server restart): append a sequential number before the extension,
+        # starting at 2 (the original file is "1").
         if path.exists():
-            i = 1
+            i = 2
             while True:
                 candidate = path.with_name(f"{path.stem} {i}{path.suffix}")
                 if not candidate.exists():
