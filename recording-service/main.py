@@ -238,7 +238,20 @@ def api_delete_recording(path: str = Query(...)) -> dict[str, bool]:
     if not target.is_file():
         raise HTTPException(status_code=404, detail="Not found")
     target.unlink()
+    _prune_empty_dirs(target.parent, base)
     return {"ok": True}
+
+
+def _prune_empty_dirs(directory: Path, base: Path) -> None:
+    """Remove ``directory`` and any now-empty ancestors up to (but not including) ``base``."""
+    current = directory.resolve()
+    base_resolved = base.resolve()
+    while current != base_resolved and base_resolved in current.parents:
+        if not any(current.iterdir()):
+            current.rmdir()
+            current = current.parent
+        else:
+            break
 
 
 @app.post("/api/recordings/{schedule_id}/stop")
