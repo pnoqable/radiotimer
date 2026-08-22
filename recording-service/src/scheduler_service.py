@@ -8,6 +8,7 @@ from apscheduler.triggers.cron import CronTrigger  # type: ignore
 from pendulum import DateTime, Duration, Time  # type: ignore
 
 from src import utils
+from src.ffmpeg_recorder import is_active
 from src.models import RecordingSchedule
 from src.recording_service import RecordAudioService
 
@@ -45,8 +46,10 @@ class RecordingSchedulerService:
         )
 
         next_run_time = None
-        # If due, schedule a recording task to run immediately
-        if is_due:
+        # If the recording should already be running right now, start it
+        # immediately (delayed a few seconds so the scheduler is ready).
+        # If it is already running, don't start a second instance.
+        if is_due and not is_active(str(recording_schedule.id)):
             # Delay by 5 seconds to allow scheduler to start
             next_run_time = current_time + Duration(seconds=5)
             logger.info(
@@ -73,12 +76,12 @@ class RecordingSchedulerService:
                 args=[recording_schedule],
                 id=str(recording_schedule.id),
                 name=recording_schedule.title,
+                next_run_time=(
+                    self._pendulum_dt_to_std_dt(next_run_time)
+                    if next_run_time is not None
+                    else None
+                ),
             )
-
-            # Add next run time to job if specified
-            if next_run_time is not None:
-                # Convert pendulum DateTime to python datetime as apscheduler doesn't like pendulum DateTime... (AttributeError: 'NoneType' object has no attribute 'convert')
-                job.next_run_time = self._pendulum_dt_to_std_dt(next_run_time)
 
         except ValueError as e:
             raise SchedulerError(
