@@ -185,6 +185,24 @@
       for (const child of tree.children) {
         root.appendChild(renderNode(child, [], 0));
       }
+      root.querySelectorAll("[data-del]").forEach((b) => {
+        b.onclick = () => delRecording(b.dataset.del);
+      });
+    }
+
+    async function delRecording(path) {
+      if (!confirm("Aufnahme löschen?")) return;
+      const res = await fetch(
+        "/api/recordings?path=" + encodeURIComponent(path),
+        { method: "DELETE" }
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert("Konnte Aufnahme nicht löschen: " + (err.detail || res.status));
+        return;
+      }
+      _lastRecordings = null;
+      loadRecordings();
     }
 
     function renderNode(node, pathParts, depth) {
@@ -196,6 +214,7 @@
           <span>${node.name}</span>
           <span class="muted">${size}</span>
           <a href="${node.url}" onclick="window.open(this.href,'player','width=600,height=200');return false;">Abspielen</a>
+          <button data-del="${node.path}">Löschen</button>`;
         return row;
       }
       const parts = [...pathParts, node.name];
