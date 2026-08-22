@@ -216,7 +216,7 @@ def _select_schedules(where_clause: str = "", params: tuple = ()) -> list[dict[s
     """
     if where_clause:
         sql += " WHERE " + where_clause
-    sql += " ORDER BY s.title"
+    sql += " ORDER BY LOWER(s.title)"
     conn = _connect()
     rows = conn.execute(sql, params).fetchall()
     conn.close()
