@@ -27,6 +27,7 @@ from src.db import (
     update_station,
 )
 from src.ffmpeg_recorder import is_active, stop
+from src.playlist import resolve_stream_url
 from src.recording_service import RecordAudioService
 from src.schedule_builder import build_schedule
 from src.scheduler_service import RecordingSchedulerService
@@ -153,6 +154,20 @@ def api_delete_station(station_id: str) -> dict[str, bool]:
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"ok": True}
+
+
+@app.get("/api/stations/{station_id}/resolve")
+async def api_resolve_station(station_id: str) -> dict[str, Any]:
+    # Resolve the (possibly .m3u/.pls) station URL to the direct stream URL so
+    # it can be tested/played directly in a browser <audio> element.
+    station = get_station(station_id)
+    if not station:
+        raise HTTPException(status_code=404, detail="Not found")
+    try:
+        url = await resolve_stream_url(station["url"])
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Konnte Stream-URL nicht auflösen: {e}")
+    return {"url": url}
 
 
 # ---------------------------------------------------------------------------

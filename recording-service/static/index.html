@@ -25,6 +25,7 @@
     summary { cursor: pointer; font-weight: 600; }
     .file-row { display: flex; gap: .5rem; align-items: center; padding: .15rem 0 0 1.5rem; }
     .del-link { color: #c33; text-decoration: none; cursor: pointer; }
+    .url-link { color: inherit; text-decoration: underline; cursor: pointer; }
     .del-link:hover { text-decoration: underline; }
     .muted { color: #888; }
   </style>
@@ -207,7 +208,7 @@
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>${s.name}</td>
-          <td class="muted"><a href="${s.url}" onclick="window.open(this.href,'streamtest','width=420,height=220');return false;">${s.url}</a></td>
+          <td class="muted"><a href="javascript:void(0)" class="url-link" onclick="testStream('${s.id}')">${s.url}</a></td>
           <td class="row-actions">
             <button data-edit="${s.id}">Bearbeiten</button>
             <button data-del="${s.id}">Löschen</button>
@@ -219,6 +220,36 @@
       }
       tb.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => editStation(b.dataset.edit));
       tb.querySelectorAll("[data-del]").forEach(b => b.onclick = () => delStation(b.dataset.del));
+    }
+
+    function testStream(id) {
+      const w = window.open("", "streamtest", "width=420,height=240");
+      if (!w) {
+        alert("Popup wurde blockiert. Bitte Popups für diese Seite erlauben.");
+        return;
+      }
+      w.document.write(
+        '<!doctype html><html><head><meta charset="utf-8"><title>Stream-Test</title></head>' +
+        '<body style="font-family:sans-serif;margin:1rem">' +
+        '<h3>Stream-Test</h3>' +
+        '<p id="s" style="word-break:break-all">lade…</p>' +
+        '<audio id="a" controls autoplay style="width:100%"></audio>' +
+        '</body></html>'
+      );
+      fetch("/api/stations/" + id + "/resolve")
+        .then((r) => (r.ok ? r.json() : r.json().then((e) => { throw new Error(e.detail || r.status); })))
+        .then((d) => {
+          const s = w.document.getElementById("s");
+          const a = w.document.getElementById("a");
+          if (d.url) {
+            s.textContent = d.url;
+            a.src = d.url;
+          }
+        })
+        .catch((e) => {
+          const s = w.document.getElementById("s");
+          if (s) s.textContent = "Fehler: " + e.message;
+        });
     }
 
     async function editStation(id) {

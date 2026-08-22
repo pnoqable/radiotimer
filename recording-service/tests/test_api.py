@@ -112,3 +112,25 @@ def test_start_endpoint(tmp_path, monkeypatch):
         assert res3.status_code == 200
         assert res3.json() == {"started": False, "reason": "already running"}
 
+
+def test_resolve_station(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")
+    import main as m
+
+    # Avoid real network access: stub the resolver.
+    async def fake_resolve(url):
+        return "http://stream/resolved.mp3"
+
+    monkeypatch.setattr(m, "resolve_stream_url", fake_resolve)
+    db.init_db()
+    station = db.create_station({"name": "BR", "url": "http://x/y.m3u"})
+
+    with TestClient(m.app) as client:
+        res = client.get(f"/api/stations/{station['id']}/resolve")
+        assert res.status_code == 200
+        assert res.json() == {"url": "http://stream/resolved.mp3"}
+
+        # unknown station -> 404
+        assert client.get("/api/stations/nope/resolve").status_code == 404
+
