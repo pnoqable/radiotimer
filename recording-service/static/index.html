@@ -63,7 +63,6 @@
         <label><input type="checkbox" class="day" value="sat" />Samstag</label>
         <label><input type="checkbox" class="day" value="sun" />Sonntag</label>
       </fieldset>
-      <label>Format<select id="audio_format"><option value="mp3">mp3</option><option value="mp4">mp4</option></select></label>
       <button type="submit" id="submit-btn">Speichern</button>
       <button type="button" id="reset-btn">Abbrechen</button>
     </form>
@@ -418,7 +417,6 @@
       $("start_time").value = r.start_time;
       $("end_time").value = r.end_time;
       setFrequency(r.frequency);
-      $("audio_format").value = r.audio_format;
       $("start_time").classList.remove("invalid");
       $("end_time").classList.remove("invalid");
       $("submit-btn").textContent = "Aktualisieren";
@@ -481,7 +479,7 @@
         start_time: startNorm,
         end_time: endNorm,
         frequency: freq,
-        audio_format: $("audio_format").value,
+        audio_format: "mp3",
       };
       if (id) {
         await fetch("/api/schedules/" + id, { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
