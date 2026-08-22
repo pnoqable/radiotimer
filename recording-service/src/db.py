@@ -125,7 +125,7 @@ def _station_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
 
 def list_stations() -> list[dict[str, Any]]:
     conn = _connect()
-    rows = conn.execute("SELECT * FROM stations ORDER BY name").fetchall()
+    rows = conn.execute("SELECT * FROM stations ORDER BY LOWER(name)").fetchall()
     conn.close()
     return [_station_row_to_dict(r) for r in rows]
 
