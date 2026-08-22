@@ -13,6 +13,7 @@
     form { display: grid; grid-template-columns: repeat(2, 1fr); gap: .5rem; margin-top: 1rem; }
     form label { display: flex; flex-direction: column; font-size: .8rem; }
     input, select { padding: .35rem; }
+    input.invalid { border: 1px solid #c33; background: #fff0f0; }
     button { padding: .4rem .8rem; cursor: pointer; }
     .running { color: #2a2; font-weight: bold; }
     .row-actions button { margin-right: .3rem; }
@@ -65,6 +66,52 @@
 
   <script>
     const $ = (id) => document.getElementById(id);
+
+    // Normalize a free-form time entry to "HH:MM". Accepts "16", "16:00",
+    // "1600", "8:5", etc. Returns null for anything that is not a valid time.
+    function normalizeTime(raw) {
+      if (raw == null) return null;
+      const s = String(raw).trim().replace(/\s+/g, "");
+      if (s === "") return null;
+      let h, m = 0;
+      if (s.includes(":")) {
+        const parts = s.split(":");
+        if (parts.length !== 2) return null;
+        h = parts[0];
+        m = parts[1];
+      } else if (/^\d{3,4}$/.test(s)) {
+        h = s.slice(0, s.length - 2);
+        m = s.slice(s.length - 2);
+      } else if (/^\d{1,2}$/.test(s)) {
+        h = s;
+      } else {
+        return null;
+      }
+      if (!/^\d{1,2}$/.test(h) || !/^\d{1,2}$/.test(m)) return null;
+      h = parseInt(h, 10);
+      m = parseInt(m, 10);
+      if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+      return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0");
+    }
+
+    function attachTimeField(id) {
+      const el = $(id);
+      el.addEventListener("blur", () => {
+        if (el.value.trim() === "") {
+          el.classList.remove("invalid");
+          return;
+        }
+        const norm = normalizeTime(el.value);
+        if (norm === null) {
+          el.classList.add("invalid");
+        } else {
+          el.classList.remove("invalid");
+          el.value = norm;
+        }
+      });
+    }
+    attachTimeField("start_time");
+    attachTimeField("end_time");
 
     async function loadStations() {
       const rows = await (await fetch("/api/stations")).json();
@@ -287,12 +334,16 @@
       $("end_time").value = r.end_time;
       $("frequency").value = r.frequency;
       $("audio_format").value = r.audio_format;
+      $("start_time").classList.remove("invalid");
+      $("end_time").classList.remove("invalid");
       $("submit-btn").textContent = "Aktualisieren";
     }
 
     function resetScheduleForm() {
       $("schedule-form").reset();
       $("id").value = "";
+      $("start_time").classList.remove("invalid");
+      $("end_time").classList.remove("invalid");
       $("submit-btn").textContent = "Speichern";
     }
 
@@ -320,12 +371,24 @@
 
     $("schedule-form").onsubmit = async (e) => {
       e.preventDefault();
+      const startNorm = normalizeTime($("start_time").value);
+      const endNorm = normalizeTime($("end_time").value);
+      if (startNorm === null) {
+        $("start_time").classList.add("invalid");
+        alert("Ungültige Startzeit. Bitte im Format HH:MM eingeben (z. B. 20:00).");
+        return;
+      }
+      if (endNorm === null) {
+        $("end_time").classList.add("invalid");
+        alert("Ungültige Endzeit. Bitte im Format HH:MM eingeben (z. B. 21:00).");
+        return;
+      }
       const id = $("id").value;
       const payload = {
         title: $("title").value,
         station_id: $("station_id").value,
-        start_time: $("start_time").value,
-        end_time: $("end_time").value,
+        start_time: startNorm,
+        end_time: endNorm,
         frequency: $("frequency").value || "*",
         audio_format: $("audio_format").value,
       };
