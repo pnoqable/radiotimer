@@ -109,7 +109,12 @@
 
     async function delStation(id) {
       if (!confirm("Sender löschen? (Nur möglich, wenn keine Sendung ihn nutzt)")) return;
-      await fetch("/api/stations/" + id, { method: "DELETE" });
+      const res = await fetch("/api/stations/" + id, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert("Sender konnte nicht gelöscht werden: " + (err.detail || res.status));
+        return;
+      }
       loadStations();
     }
 
