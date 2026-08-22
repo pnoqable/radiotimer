@@ -61,7 +61,8 @@ def test_build_schedule_midnight_wrap(monkeypatch, tmp_path):
 
 
 def test_recording_task_path_uses_pattern(monkeypatch, tmp_path):
-    monkeypatch.setattr(settings, "PATTERN", "{station}/{title}/{date}--{start}-{end}.{ext}")
+    # Adopted from the old "VLC Timer": <station>/<title>/<date> <HH-MM>.mp3
+    monkeypatch.setattr(settings, "PATTERN", "{station}/{title}/{date} {start_hm}.{ext}")
 
     start = pendulum.datetime(2026, 1, 2, 18, 0, 0, tz="UTC")
     end = pendulum.datetime(2026, 1, 2, 19, 0, 0, tz="UTC")
@@ -76,7 +77,7 @@ def test_recording_task_path_uses_pattern(monkeypatch, tmp_path):
         stream_url=ValidUrl("http://example.com/stream.mp3"),
     )
 
-    assert task.file_path == tmp_path / "br-klassik" / "testsendung" / "2026-01-02--1800-1900.mp3"
+    assert task.file_path == tmp_path / "br-klassik" / "testsendung" / "2026-01-02 18-00.mp3"
 
 
 @pytest.mark.asyncio

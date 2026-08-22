@@ -50,7 +50,9 @@ class RecordingTask:
             title=slugify(self.title),
             date=start.strftime("%Y-%m-%d"),
             start=start.strftime("%H%M"),
+            start_hm=start.strftime("%H-%M"),
             end=end.strftime("%H%M"),
+            end_hm=end.strftime("%H-%M"),
             ext=self.audio_format,
             id=str(self.id),
         )
