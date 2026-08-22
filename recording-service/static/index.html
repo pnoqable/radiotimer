@@ -158,21 +158,41 @@
       tb.querySelectorAll("[data-stop]").forEach(b => b.onclick = () => stopSchedule(b.dataset.stop));
     }
 
+    let _expandedFolders = new Set();
+    let _lastRecordings = null;
+
     async function loadRecordings() {
       const data = await (await fetch("/api/recordings")).json();
+      const tree = data.tree;
+      const json = JSON.stringify(tree);
+      // Skip re-rendering when nothing changed, so open folders stay open
+      // and there is no flicker on every auto-refresh.
+      if (json === _lastRecordings) {
+        return;
+      }
+      _lastRecordings = json;
+
+      // Capture the exact open/closed state of folders before we rebuild.
+      const open = new Set();
+      document
+        .querySelectorAll("#recordings details[data-path]")
+        .forEach((d) => {
+          if (d.open) open.add(d.dataset.path);
+        });
+      _expandedFolders = open;
+
       const root = $("recordings");
       root.innerHTML = "";
-      const tree = data.tree;
       if (!tree.children.length) {
         root.innerHTML = '<p class="muted">Noch keine Aufnahmen.</p>';
         return;
       }
       for (const child of tree.children) {
-        root.appendChild(renderNode(child, 0));
+        root.appendChild(renderNode(child, [], 0));
       }
     }
 
-    function renderNode(node, depth) {
+    function renderNode(node, pathParts, depth) {
       if (node.type === "file") {
         const row = document.createElement("div");
         row.className = "file-row";
@@ -183,13 +203,16 @@
           <a href="${node.url}" onclick="window.open(this.href,'player','width=420,height=220');return false;">Abspielen</a>`;
         return row;
       }
+      const parts = [...pathParts, node.name];
+      const path = parts.join("/");
       const details = document.createElement("details");
-      details.open = depth < 1;
+      details.dataset.path = path;
+      details.open = depth < 1 || _expandedFolders.has(path);
       const summary = document.createElement("summary");
       summary.textContent = node.name;
       details.appendChild(summary);
       for (const child of node.children) {
-        details.appendChild(renderNode(child, depth + 1));
+        details.appendChild(renderNode(child, parts, depth + 1));
       }
       return details;
     }
