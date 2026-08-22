@@ -77,7 +77,7 @@ def test_recording_task_path_uses_pattern(monkeypatch, tmp_path):
         stream_url=ValidUrl("http://example.com/stream.mp3"),
     )
 
-    assert task.file_path == tmp_path / "br-klassik" / "testsendung" / "2026-01-02 18-00.mp3"
+    assert task.file_path == tmp_path / "BR Klassik" / "Testsendung" / "2026-01-02 18-00.mp3"
 
 
 @pytest.mark.asyncio

@@ -3,8 +3,6 @@ import os
 from pathlib import Path
 from typing import Any, AsyncIterator
 
-import yaml
-
 from src.models import RecordingSchedule
 
 logger = logging.getLogger(__name__)
@@ -41,7 +39,6 @@ class AudioStorageAdapter:  # XXX: FileRepo
 
 def ensure_dir_with_metadata(directory: Path, metadata: dict[str, Any]) -> Path:
     _ensure_dir(directory)
-    _write_meta_data(directory, metadata)
     return directory
 
 
@@ -52,11 +49,3 @@ def _ensure_dir(directory: Path):
     # Test if we have write access to the output directory
     if not os.access(directory, os.W_OK | os.X_OK):
         raise IOError(f"Missing write permissions to directory {directory}")
-
-
-# Create a file with the meta data if it doesn't exist.
-def _write_meta_data(directory: Path, metadata: dict[str, Any]):
-    metadata_file = directory / "metadata.yml"
-    if not metadata_file.exists():
-        with open(metadata_file, "w") as f:
-            yaml.dump(metadata, f, allow_unicode=True)

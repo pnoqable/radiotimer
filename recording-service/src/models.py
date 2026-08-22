@@ -9,7 +9,6 @@ from typing import Any, Optional
 import validators  # type: ignore
 from croniter import croniter
 from pendulum import Date, DateTime, Duration, Period, Time  # type: ignore
-from slugify import slugify
 from typing_extensions import override
 
 from src import settings, utils
@@ -46,8 +45,8 @@ class RecordingTask:
         start = self.recording_period.start
         end = self.recording_period.end
         rel = self.pattern.format(
-            station=slugify(self.station),
-            title=slugify(self.title),
+            station=_safe_name(self.station),
+            title=_safe_name(self.title),
             date=start.strftime("%Y-%m-%d"),
             start=start.strftime("%H%M"),
             start_hm=start.strftime("%H-%M"),
@@ -57,6 +56,16 @@ class RecordingTask:
             id=str(self.id),
         )
         return self.base_dir / rel
+
+
+def _safe_name(name: str) -> str:
+    """Make a string safe to use as a path component while keeping the
+    original casing, spaces and umlauts (only strip path separators and
+    control characters)."""
+    name = name.strip()
+    name = re.sub(r"[\x00-\x1f/\\]", "_", name)
+    name = name.strip().strip(".")
+    return name or "unnamed"
 
 
 @dataclass(frozen=True)
