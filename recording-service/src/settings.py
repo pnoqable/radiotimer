@@ -9,9 +9,11 @@ TIME_ZONE = os.getenv("RADIOTIMER_TZ", "Europe/Berlin")
 OUTPUT_DIR = Path(os.getenv("RADIOTIMER_OUTPUT", "./recordings"))
 
 # Global path pattern for recordings, relative to OUTPUT_DIR.
-# Available placeholders: {station}, {title}, {date}, {start}, {end}, {ext}, {id}
+# Mirrors the old "VLC Timer" naming: <station>/<title>/<YYYY>-<MM>-<DD> <HH>-<MM>.mp3
+# Available placeholders: {station}, {title}, {date}, {start}, {end},
+# {start_hm}, {end_hm}, {ext}, {id}
 PATTERN = os.getenv(
-    "RADIOTIMER_PATTERN", "{station}/{title}/{date}--{start}-{end}.{ext}"
+    "RADIOTIMER_PATTERN", "{station}/{title}/{date} {start_hm}.{ext}"
 )
 
 # SQLite database file storing the schedules.
