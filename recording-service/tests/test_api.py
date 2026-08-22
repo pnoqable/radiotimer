@@ -113,7 +113,7 @@ def test_start_endpoint(tmp_path, monkeypatch):
         assert res3.json() == {"started": False, "reason": "already running"}
 
 
-def test_resolve_station(tmp_path, monkeypatch):
+def test_open_station_redirects_to_stream(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
     monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")
     import main as m
@@ -127,10 +127,10 @@ def test_resolve_station(tmp_path, monkeypatch):
     station = db.create_station({"name": "BR", "url": "http://x/y.m3u"})
 
     with TestClient(m.app) as client:
-        res = client.get(f"/api/stations/{station['id']}/resolve")
-        assert res.status_code == 200
-        assert res.json() == {"url": "http://stream/resolved.mp3"}
+        res = client.get(f"/api/stations/{station['id']}/open", follow_redirects=False)
+        assert res.status_code in (302, 307)
+        assert res.headers["location"] == "http://stream/resolved.mp3"
 
         # unknown station -> 404
-        assert client.get("/api/stations/nope/resolve").status_code == 404
+        assert client.get("/api/stations/nope/open", follow_redirects=False).status_code == 404
 
