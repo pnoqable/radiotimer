@@ -37,11 +37,11 @@ class RecordingSchedulerService:
         current_time = self._time_provider.get_current_time()
 
         # Check if we should be recording right now, then set next run time to right now
-        # Get inital task to run to peek at the recording period
-        initial_task = recording_schedule.get_current_or_next_task(current_time)
+        # Peek at the recording period (without resolving the stream URL yet)
+        initial_period = recording_schedule.resolve_recording_period(current_time)
         is_due = (
-            initial_task.recording_period.start <= current_time
-            and current_time <= initial_task.recording_period.end
+            initial_period.start <= current_time
+            and current_time <= initial_period.end
         )
 
         next_run_time = None
@@ -109,7 +109,7 @@ class RecordingSchedulerService:
         )
 
         current_time = self._time_provider.get_current_time()
-        task = recording_schedule.get_current_or_next_task(
+        task = await recording_schedule.get_current_or_next_task(
             recording_start_time=current_time
         )
 
