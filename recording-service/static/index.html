@@ -20,6 +20,8 @@
     details { margin-left: 1rem; }
     summary { cursor: pointer; font-weight: 600; }
     .file-row { display: flex; gap: .5rem; align-items: center; padding: .15rem 0 0 1.5rem; }
+    .del-link { color: #c33; text-decoration: none; cursor: pointer; }
+    .del-link:hover { text-decoration: underline; }
     .muted { color: #888; }
   </style>
 </head>
@@ -222,7 +224,10 @@
         root.appendChild(renderNode(child, [], 0));
       }
       root.querySelectorAll("[data-del]").forEach((b) => {
-        b.onclick = () => delRecording(b.dataset.del);
+        b.onclick = (e) => {
+          e.preventDefault();
+          delRecording(b.dataset.del);
+        };
       });
     }
 
@@ -247,10 +252,9 @@
         row.className = "file-row";
         const size = node.size ? (node.size / 1024 / 1024).toFixed(2) + " MB" : "";
         row.innerHTML = `
-          <span>${node.name}</span>
-          <span class="muted">${size}</span>
-          <a href="${node.url}" onclick="window.open(this.href,'player','width=600,height=200');return false;">Abspielen</a>
-          <button data-del="${node.path}">Löschen</button>`;
+          <a href="${node.url}" onclick="window.open(this.href,'player','width=600,height=200');return false;">${node.name}</a>
+          <span class="muted">(${size})</span>
+          <a href="javascript:void(0)" class="del-link" data-del="${node.path}">[X]</a>`;
         return row;
       }
       const parts = [...pathParts, node.name];
