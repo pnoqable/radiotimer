@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -226,6 +226,19 @@ def api_recordings() -> dict[str, Any]:
         return {"tree": {"name": OUTPUT_DIR.name, "type": "folder", "children": []}}
     tree = _build_recordings_tree(OUTPUT_DIR)
     return {"tree": tree}
+
+
+@app.delete("/api/recordings")
+def api_delete_recording(path: str = Query(...)) -> dict[str, bool]:
+    base = OUTPUT_DIR.resolve()
+    target = (base / path).resolve()
+    # Prevent path traversal: the resolved target must stay inside OUTPUT_DIR.
+    if target != base and base not in target.parents:
+        raise HTTPException(status_code=400, detail="Invalid path")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="Not found")
+    target.unlink()
+    return {"ok": True}
 
 
 @app.post("/api/recordings/{schedule_id}/stop")
