@@ -24,6 +24,9 @@ def test_delete_recording(tmp_path, monkeypatch):
         res = client.delete(url)
         assert res.status_code == 200
         assert not rec.exists()
+        # empty parent folders are pruned automatically
+        assert not (tmp_path / "BR Klassik" / "Jazz").exists()
+        assert not (tmp_path / "BR Klassik").exists()
 
         # path traversal must be rejected
         evil = "/api/recordings?path=" + urllib.parse.quote("../../etc/passwd")
