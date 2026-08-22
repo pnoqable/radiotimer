@@ -207,7 +207,7 @@
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>${s.name}</td>
-          <td class="muted">${s.url}</td>
+          <td class="muted"><a href="${s.url}" onclick="window.open(this.href,'streamtest','width=420,height=220');return false;">${s.url}</a></td>
           <td class="row-actions">
             <button data-edit="${s.id}">Bearbeiten</button>
             <button data-del="${s.id}">Löschen</button>
