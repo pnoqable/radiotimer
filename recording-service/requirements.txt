@@ -6,6 +6,7 @@ croniter
 python-slugify
 pyyaml
 aiohttp
+httpx
 validators
 mutagen
 pytz

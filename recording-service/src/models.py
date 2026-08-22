@@ -1,4 +1,3 @@
-# import datetime
 import logging
 import re
 import uuid
@@ -10,9 +9,10 @@ from typing import Any, Optional
 import validators  # type: ignore
 from croniter import croniter
 from pendulum import Date, DateTime, Duration, Period, Time  # type: ignore
+from slugify import slugify
 from typing_extensions import override
 
-from src import utils
+from src import settings, utils
 from src.utils import TimePeriod
 
 logger = logging.getLogger(__name__)
@@ -29,74 +29,61 @@ class ValidUrl(str):
 @dataclass(frozen=True)
 class RecordingTask:
     title: str
+    station: str
     recording_period: TimePeriod
     base_dir: Path
     audio_format: str
     stream_url: ValidUrl
-    file_path: Path = field(init=False)  # The file path to save the recording to
-    # duration: Duration
+    pattern: str = settings.PATTERN
     id: uuid.UUID = field(default_factory=lambda: uuid.uuid4())
 
     def __post_init__(self):
-        file_path = self._make_file_path(
-            self.base_dir, self.audio_format, self.recording_period, self.id, self.title
-        )
+        file_path = self._make_file_path()
         object.__setattr__(self, "file_path", file_path)  # Mutates frozen object
 
-    # TODO: Consider move to FileSystemRepo
-
-    # Get full file path for the output of this recording task
-    def _make_file_path(
-        self,
-        output_dir: Path,
-        audio_format: str,
-        recording_period: TimePeriod,
-        task_id: uuid.UUID,
-        title: str,
-    ) -> Path:
-        filename = self._make_file_name(recording_period, task_id, title)
-        return output_dir / (filename + "." + audio_format)
-
-    # Create file name with date, start time, end time and title
-    def _make_file_name(
-        self, recording_period: TimePeriod, task_id: uuid.UUID, title: str
-    ) -> str:
-        # Replace all non-alphanumeric characters with underscore and lowercase
-        title_str = re.sub(r"[^a-zA-Z0-9]", "-", title).lower()
-
-        date_str = recording_period.start.strftime("%Y-%m-%d")
-        start_time_str = recording_period.start.strftime("%H%M")
-        end_time_str = recording_period.end.strftime("%H%M")
-
-        # Url friendly file name
-        return f"{date_str}--{start_time_str}-{end_time_str}--{title_str}--{task_id}"
+    # Build the output path from the global pattern.
+    def _make_file_path(self) -> Path:
+        start = self.recording_period.start
+        end = self.recording_period.end
+        rel = self.pattern.format(
+            station=slugify(self.station),
+            title=slugify(self.title),
+            date=start.strftime("%Y-%m-%d"),
+            start=start.strftime("%H%M"),
+            end=end.strftime("%H%M"),
+            ext=self.audio_format,
+            id=str(self.id),
+        )
+        return self.base_dir / rel
 
 
 @dataclass(frozen=True)
 class RecordingSchedule:
-    """A recording schedule defines a daily recording period
-       If the start time is later than the end time, it is assumed that the recording spans across midnight.
+    """A recording schedule references a station and defines a daily recording
+    period. If the start time is later than the end time, the recording is
+    assumed to span across midnight.
 
     Args:
         title (str): The title of the schedule.
-        start_timeofday (time): The start time of day for the recording period in UTC.
-        output_dir (Path): The output directory for recordings made by this schedule.
+        station_name (str): Name of the station (used for the output path).
+        station_url (str): The station's stream/playlist URL (resolved at record time).
+        start_timeofday (Time): Start time of day for the recording period in UTC.
+        output_dir (Path): The base output directory for recordings.
     """
 
     title: str
+    station_name: str
+    station_url: str
     start_timeofday: Time
     duration: Duration
     audio_format: str
     output_dir: Path
-    metadata: dict[str, Any]
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     id: uuid.UUID = field(init=False, default_factory=lambda: uuid.uuid4())
 
     # Optional
-    description: Optional[str] = None
-    image_url: Optional[ValidUrl] = None
     frequency: str = "*"  # Defaults to "daily" cron expression
-    stream_url: Optional[ValidUrl] = None
 
     @property
     def end_timeofday(self) -> Time:
@@ -118,16 +105,21 @@ class RecordingSchedule:
             self, "frequency", self.frequency.replace(" ", "")
         )  # Mutates frozen object
 
-    # Gets the current or next task.
-    def get_current_or_next_task(self, recording_start_time: DateTime) -> RecordingTask:
+    # Gets the current or next task. The station's playlist URL is resolved
+    # to a recordable stream URL right before the recording starts.
+    async def get_current_or_next_task(self, recording_start_time: DateTime) -> RecordingTask:
+        from src.playlist import resolve_stream_url
+
         recording_period = self.resolve_recording_period(recording_start_time)
+        resolved = await resolve_stream_url(self.station_url)
 
         return RecordingTask(
             title=self.title,
+            station=self.station_name,
             recording_period=recording_period,
             base_dir=self.output_dir,
             audio_format=self.audio_format,
-            stream_url=self.stream_url,  # type: ignore
+            stream_url=ValidUrl(resolved),
         )
 
     def resolve_recording_period(self, recording_start_time: DateTime) -> TimePeriod:

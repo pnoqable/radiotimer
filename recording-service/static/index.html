@@ -6,18 +6,21 @@
   <title>radiotimer</title>
   <style>
     :root { color-scheme: light dark; }
-    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 900px; }
+    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 1000px; }
     h1 { margin-bottom: .25rem; }
     table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-    th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid #8884; }
+    th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid #8884; vertical-align: top; }
     form { display: grid; grid-template-columns: repeat(2, 1fr); gap: .5rem; margin-top: 1rem; }
     form label { display: flex; flex-direction: column; font-size: .8rem; }
     input, select { padding: .35rem; }
     button { padding: .4rem .8rem; cursor: pointer; }
     .running { color: #2a2; font-weight: bold; }
     .row-actions button { margin-right: .3rem; }
-    audio { width: 220px; height: 32px; }
     .card { border: 1px solid #8884; border-radius: 8px; padding: 1rem; margin-top: 1rem; }
+    details { margin-left: 1rem; }
+    summary { cursor: pointer; font-weight: 600; }
+    .file-row { display: flex; gap: .5rem; align-items: center; padding: .15rem 0; }
+    .muted { color: #888; }
   </style>
 </head>
 <body>
@@ -25,17 +28,30 @@
   <p>Automatische Aufnahme von Webradiosendungen nach Zeitplan (ffmpeg).</p>
 
   <div class="card">
+    <h2>Sender</h2>
+    <form id="station-form">
+      <input type="hidden" id="station-id" />
+      <label>Name<input id="station-name" required placeholder="BR Klassik" /></label>
+      <label>Stream/Playlist-URL<input id="station-url" required placeholder="https://.../stream.m3u" /></label>
+      <button type="submit" id="station-submit">Sender speichern</button>
+      <button type="button" id="station-reset">Abbrechen</button>
+    </form>
+    <table id="stations">
+      <thead><tr><th>Name</th><th>URL</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="card">
     <h2>Sendung</h2>
     <form id="schedule-form">
       <input type="hidden" id="id" />
       <label>Titel<input id="title" required /></label>
-      <label>Stream-URL<input id="stream_url" required placeholder="https://..." /></label>
+      <label>Sender<select id="station_id" required></select></label>
       <label>Start (HH:MM)<input id="start_time" required placeholder="20:00" /></label>
       <label>Ende (HH:MM)<input id="end_time" required placeholder="21:00" /></label>
       <label>Wochentage<input id="frequency" placeholder="* oder mon-fri, tue,fri" /></label>
       <label>Format<select id="audio_format"><option value="mp3">mp3</option><option value="mp4">mp4</option></select></label>
-      <label>Ordner (subdir)<input id="subdir" required placeholder="meine-sendung" /></label>
-      <label>Beschreibung<input id="description" /></label>
       <button type="submit" id="submit-btn">Speichern</button>
       <button type="button" id="reset-btn">Abbrechen</button>
     </form>
@@ -43,22 +59,76 @@
 
   <h2>Geplante Sendungen</h2>
   <table id="schedules">
-    <thead><tr><th>Titel</th><th>Stream</th><th>Zeit</th><th>Tage</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Titel</th><th>Sender</th><th>Zeit</th><th>Tage</th><th>Status</th><th></th></tr></thead>
     <tbody></tbody>
   </table>
 
   <h2>Aufnahmen</h2>
-  <table id="recordings">
-    <thead><tr><th>Datei</th><th>Größe</th><th></th></tr></thead>
-    <tbody></tbody>
-  </table>
+  <div id="recordings"></div>
 
   <script>
     const $ = (id) => document.getElementById(id);
 
+    async function loadStations() {
+      const rows = await (await fetch("/api/stations")).json();
+      const tb = $("stations").querySelector("tbody");
+      tb.innerHTML = "";
+      const sel = $("station_id");
+      sel.innerHTML = "";
+      for (const s of rows) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${s.name}</td>
+          <td class="muted">${s.url}</td>
+          <td class="row-actions">
+            <button data-edit="${s.id}">Bearbeiten</button>
+            <button data-del="${s.id}">Löschen</button>
+          </td>`;
+        tb.appendChild(tr);
+        const opt = document.createElement("option");
+        opt.value = s.id; opt.textContent = s.name;
+        sel.appendChild(opt);
+      }
+      tb.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => editStation(b.dataset.edit));
+      tb.querySelectorAll("[data-del]").forEach(b => b.onclick = () => delStation(b.dataset.del));
+    }
+
+    async function editStation(id) {
+      const s = await (await fetch("/api/stations/" + id)).json();
+      $("station-id").value = s.id;
+      $("station-name").value = s.name;
+      $("station-url").value = s.url;
+      $("station-submit").textContent = "Aktualisieren";
+    }
+
+    function resetStationForm() {
+      $("station-form").reset();
+      $("station-id").value = "";
+      $("station-submit").textContent = "Sender speichern";
+    }
+
+    async function delStation(id) {
+      if (!confirm("Sender löschen? (Nur möglich, wenn keine Sendung ihn nutzt)")) return;
+      await fetch("/api/stations/" + id, { method: "DELETE" });
+      loadStations();
+    }
+
+    $("station-form").onsubmit = async (e) => {
+      e.preventDefault();
+      const id = $("station-id").value;
+      const payload = { name: $("station-name").value, url: $("station-url").value };
+      if (id) {
+        await fetch("/api/stations/" + id, { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
+      } else {
+        await fetch("/api/stations", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
+      }
+      resetStationForm();
+      loadStations();
+    };
+    $("station-reset").onclick = resetStationForm;
+
     async function loadSchedules() {
-      const res = await fetch("/api/schedules");
-      const rows = await res.json();
+      const rows = await (await fetch("/api/schedules")).json();
       const status = await (await fetch("/api/status")).json();
       const running = new Set(status.jobs.filter(j => j.running).map(j => j.id));
       const tb = $("schedules").querySelector("tbody");
@@ -67,7 +137,7 @@
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>${r.title}</td>
-          <td>${r.stream_url}</td>
+          <td>${r.station_name}</td>
           <td>${r.start_time}–${r.end_time}</td>
           <td>${r.frequency}</td>
           <td>${running.has(r.id) ? '<span class="running">● läuft</span>' : (r.enabled ? "geplant" : "pausiert")}</td>
@@ -84,31 +154,50 @@
     }
 
     async function loadRecordings() {
-      const res = await fetch("/api/recordings");
-      const data = await res.json();
-      const tb = $("recordings").querySelector("tbody");
-      tb.innerHTML = "";
-      for (const r of data.recordings) {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${r.name}</td>
-          <td>${(r.size / 1024 / 1024).toFixed(1)} MB</td>
-          <td><a href="${r.url}" onclick="window.open(this.href,'player','width=420,height=220');return false;">Abspielen</a></td>`;
-        tb.appendChild(tr);
+      const data = await (await fetch("/api/recordings")).json();
+      const root = $("recordings");
+      root.innerHTML = "";
+      const tree = data.tree;
+      if (!tree.children.length) {
+        root.innerHTML = '<p class="muted">Noch keine Aufnahmen.</p>';
+        return;
       }
+      for (const child of tree.children) {
+        root.appendChild(renderNode(child, 0));
+      }
+    }
+
+    function renderNode(node, depth) {
+      if (node.type === "file") {
+        const row = document.createElement("div");
+        row.className = "file-row";
+        const size = node.size ? (node.size / 1024 / 1024).toFixed(2) + " MB" : "";
+        row.innerHTML = `
+          <span>${node.name}</span>
+          <span class="muted">${size}</span>
+          <a href="${node.url}" onclick="window.open(this.href,'player','width=420,height=220');return false;">Abspielen</a>`;
+        return row;
+      }
+      const details = document.createElement("details");
+      details.open = depth < 1;
+      const summary = document.createElement("summary");
+      summary.textContent = node.name;
+      details.appendChild(summary);
+      for (const child of node.children) {
+        details.appendChild(renderNode(child, depth + 1));
+      }
+      return details;
     }
 
     async function editSchedule(id) {
       const r = await (await fetch("/api/schedules/" + id)).json();
       $("id").value = r.id;
       $("title").value = r.title;
-      $("stream_url").value = r.stream_url;
+      $("station_id").value = r.station_id;
       $("start_time").value = r.start_time;
       $("end_time").value = r.end_time;
       $("frequency").value = r.frequency;
       $("audio_format").value = r.audio_format;
-      $("subdir").value = r.subdir;
-      $("description").value = r.description || "";
       $("submit-btn").textContent = "Aktualisieren";
     }
 
@@ -134,13 +223,11 @@
       const id = $("id").value;
       const payload = {
         title: $("title").value,
-        stream_url: $("stream_url").value,
+        station_id: $("station_id").value,
         start_time: $("start_time").value,
         end_time: $("end_time").value,
         frequency: $("frequency").value || "*",
         audio_format: $("audio_format").value,
-        subdir: $("subdir").value,
-        description: $("description").value,
       };
       if (id) {
         await fetch("/api/schedules/" + id, { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
@@ -153,9 +240,10 @@
 
     $("reset-btn").onclick = resetScheduleForm;
 
+    loadStations();
     loadSchedules();
     loadRecordings();
-    setInterval(() => { loadSchedules(); loadRecordings(); }, 15000);
+    setInterval(() => { loadStations(); loadSchedules(); loadRecordings(); }, 15000);
   </script>
 </body>
 </html>

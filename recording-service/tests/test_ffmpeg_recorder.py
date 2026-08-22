@@ -11,30 +11,30 @@ from src import ffmpeg_recorder
 
 STUB = textwrap.dedent(
     r"""
-    #!/bin/sh
+    #!/usr/bin/env python3
     # Minimal fake ffmpeg for tests: create the output file (last argument)
     # and exit. If "-t <sec>" with sec > 5 is given, sleep that long first
-    # so the stop/terminate path can be exercised.
-    out=""
-    prev=""
-    t=""
-    for a in "$@"; do
-        if [ "$prev" = "-t" ]; then
-            t="$a"
-        fi
-        out="$a"
-        prev="$a"
-    done
-    case "$t" in
-        ''|*[!0-9.]*) ;;
-        *)
-            if awk "BEGIN{exit !($t>5)}"; then
-                sleep "$t"
-            fi
-            ;;
-    esac
-    : > "$out"
-    exit 0
+    # so the stop/terminate path can be exercised. Unlike a shell script, a
+    # Python process terminates immediately on SIGTERM in every environment.
+    import sys
+    import time
+
+    args = sys.argv[1:]
+    prev = None
+    t = None
+    out = None
+    for a in args:
+        if prev == "-t":
+            t = a
+        out = a
+        prev = a
+
+    if t and float(t) > 5:
+        time.sleep(float(t))
+
+    with open(out, "w"):
+        pass
+    sys.exit(0)
     """
 ).lstrip("\n")
 

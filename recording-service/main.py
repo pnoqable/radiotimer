@@ -1,4 +1,5 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -13,11 +14,16 @@ from src import utils
 from src.audio_storage import AudioStorageAdapter
 from src.db import (
     create_schedule,
+    create_station,
     delete_schedule,
+    delete_station,
     get_schedule,
+    get_station,
     init_db,
     list_schedules,
+    list_stations,
     update_schedule,
+    update_station,
 )
 from src.ffmpeg_recorder import is_active, stop
 from src.recording_service import RecordAudioService
@@ -35,6 +41,8 @@ STATIC_DIR = Path(__file__).parent / "static"
 # Ensure the recordings directory exists before mounting it as static files
 # (StaticFiles checks existence at import time, before the lifespan runs).
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+_AUDIO_EXTS = (".mp3", ".mp4", ".m4a", ".ogg")
 
 
 def reload_job(schedule_id: str) -> None:
@@ -60,6 +68,27 @@ def load_all_schedules() -> None:
             logger.exception("Failed to load schedule %s", row.get("id"))
 
 
+def _build_recordings_tree(root: Path) -> dict[str, Any]:
+    node: dict[str, Any] = {"name": root.name, "type": "folder", "children": []}
+    for entry in sorted(os.listdir(root)):
+        path = root / entry
+        if path.is_dir():
+            node["children"].append(_build_recordings_tree(path))
+        elif path.suffix.lower() in _AUDIO_EXTS:
+            rel = path.relative_to(OUTPUT_DIR).as_posix()
+            node["children"].append(
+                {
+                    "name": path.name,
+                    "type": "file",
+                    "path": rel,
+                    "size": path.stat().st_size,
+                    "url": f"/files/{rel}",
+                }
+            )
+    node["children"].sort(key=lambda c: c["name"].lower())
+    return node
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     utils.setup_logging(logging.INFO)
@@ -78,6 +107,58 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="radiotimer", lifespan=lifespan)
 
 
+# ---------------------------------------------------------------------------
+# Stations
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/stations")
+def api_list_stations() -> list[dict[str, Any]]:
+    return list_stations()
+
+
+@app.get("/api/stations/{station_id}")
+def api_get_station(station_id: str) -> dict[str, Any]:
+    station = get_station(station_id)
+    if not station:
+        raise HTTPException(status_code=404, detail="Not found")
+    return station
+
+
+@app.post("/api/stations")
+def api_create_station(payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return create_station(payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.put("/api/stations/{station_id}")
+def api_update_station(station_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    if not get_station(station_id):
+        raise HTTPException(status_code=404, detail="Not found")
+    try:
+        updated = update_station(station_id, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return updated  # type: ignore
+
+
+@app.delete("/api/stations/{station_id}")
+def api_delete_station(station_id: str) -> dict[str, bool]:
+    try:
+        if not delete_station(station_id):
+            raise HTTPException(status_code=404, detail="Not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Schedules
+# ---------------------------------------------------------------------------
+
+
 @app.get("/api/schedules")
 def api_list_schedules() -> list[dict[str, Any]]:
     return list_schedules()
@@ -93,10 +174,10 @@ def api_get_schedule(schedule_id: str) -> dict[str, Any]:
 
 @app.post("/api/schedules")
 def api_create_schedule(payload: dict[str, Any]) -> dict[str, Any]:
-    for key in ("title", "stream_url", "start_time", "end_time", "subdir"):
-        if not payload.get(key):
-            raise HTTPException(status_code=400, detail=f"Missing field: {key}")
-    created = create_schedule(payload)
+    try:
+        created = create_schedule(payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     reload_job(created["id"])
     return created
 
@@ -105,7 +186,10 @@ def api_create_schedule(payload: dict[str, Any]) -> dict[str, Any]:
 def api_update_schedule(schedule_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     if not get_schedule(schedule_id):
         raise HTTPException(status_code=404, detail="Not found")
-    updated = update_schedule(schedule_id, payload)
+    try:
+        updated = update_schedule(schedule_id, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     reload_job(schedule_id)
     return updated  # type: ignore
 
@@ -138,25 +222,10 @@ def api_status() -> dict[str, Any]:
 
 @app.get("/api/recordings")
 def api_recordings() -> dict[str, Any]:
-    results: list[dict[str, Any]] = []
-    if OUTPUT_DIR.exists():
-        for path in OUTPUT_DIR.rglob("*"):
-            if path.is_file() and path.suffix.lower() in (
-                ".mp3",
-                ".mp4",
-                ".m4a",
-                ".ogg",
-            ):
-                rel = path.relative_to(OUTPUT_DIR).as_posix()
-                results.append(
-                    {
-                        "path": rel,
-                        "name": path.name,
-                        "size": path.stat().st_size,
-                        "url": f"/files/{rel}",
-                    }
-                )
-    return {"recordings": results}
+    if not OUTPUT_DIR.exists():
+        return {"tree": {"name": OUTPUT_DIR.name, "type": "folder", "children": []}}
+    tree = _build_recordings_tree(OUTPUT_DIR)
+    return {"tree": tree}
 
 
 @app.post("/api/recordings/{schedule_id}/stop")
