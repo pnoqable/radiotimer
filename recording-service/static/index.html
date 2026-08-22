@@ -24,14 +24,11 @@
   </style>
 </head>
 <body>
-  <h1>radiotimer</h1>
-  <p>Automatische Aufnahme von Webradiosendungen nach Zeitplan (ffmpeg).</p>
-
   <div class="card">
     <h2>Sender</h2>
     <form id="station-form">
       <input type="hidden" id="station-id" />
-      <label>Name<input id="station-name" required placeholder="BR Klassik" /></label>
+      <label>Name<input id="station-name" required /></label>
       <label>Stream/Playlist-URL<input id="station-url" required placeholder="https://.../stream.m3u" /></label>
       <button type="submit" id="station-submit">Sender speichern</button>
       <button type="button" id="station-reset">Abbrechen</button>
@@ -55,13 +52,11 @@
       <button type="submit" id="submit-btn">Speichern</button>
       <button type="button" id="reset-btn">Abbrechen</button>
     </form>
-  </div>
-
-  <h2>Geplante Sendungen</h2>
   <table id="schedules">
-    <thead><tr><th>Titel</th><th>Sender</th><th>Zeit</th><th>Tage</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Titel</th><th>Sender</th><th>Zeit</th><th>Wochentage</th><th>Status</th><th></th></tr></thead>
     <tbody></tbody>
   </table>
+  </div>
 
   <h2>Aufnahmen</h2>
   <div id="recordings"></div>
@@ -200,7 +195,7 @@
         row.innerHTML = `
           <span>${node.name}</span>
           <span class="muted">${size}</span>
-          <a href="${node.url}" onclick="window.open(this.href,'player','width=420,height=220');return false;">Abspielen</a>`;
+          <a href="${node.url}" onclick="window.open(this.href,'player','width=600,height=200');return false;">Abspielen</a>
         return row;
       }
       const parts = [...pathParts, node.name];
