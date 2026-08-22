@@ -14,6 +14,9 @@
     form label { display: flex; flex-direction: column; font-size: .8rem; }
     input, select { padding: .35rem; }
     input.invalid { border: 1px solid #c33; background: #fff0f0; }
+    .days { grid-column: 1 / -1; display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; border: 1px solid #8884; border-radius: 6px; padding: .5rem .75rem; margin: 0; }
+    .days legend { font-size: .8rem; padding: 0 .25rem; }
+    .days label { flex-direction: row; font-size: .8rem; gap: .25rem; }
     button { padding: .4rem .8rem; cursor: pointer; }
     .running { color: #2a2; font-weight: bold; }
     .row-actions button { margin-right: .3rem; }
@@ -50,7 +53,16 @@
       <label>Sender<select id="station_id" required></select></label>
       <label>Start (HH:MM)<input id="start_time" required placeholder="20:00" /></label>
       <label>Ende (HH:MM)<input id="end_time" required placeholder="21:00" /></label>
-      <label>Wochentage<input id="frequency" placeholder="* oder mon-fri, tue,fri" /></label>
+      <fieldset class="days">
+        <legend>Wochentage</legend>
+        <label><input type="checkbox" class="day" value="mon" />Montag</label>
+        <label><input type="checkbox" class="day" value="tue" />Dienstag</label>
+        <label><input type="checkbox" class="day" value="wed" />Mittwoch</label>
+        <label><input type="checkbox" class="day" value="thu" />Donnerstag</label>
+        <label><input type="checkbox" class="day" value="fri" />Freitag</label>
+        <label><input type="checkbox" class="day" value="sat" />Samstag</label>
+        <label><input type="checkbox" class="day" value="sun" />Sonntag</label>
+      </fieldset>
       <label>Format<select id="audio_format"><option value="mp3">mp3</option><option value="mp4">mp4</option></select></label>
       <button type="submit" id="submit-btn">Speichern</button>
       <button type="button" id="reset-btn">Abbrechen</button>
@@ -112,6 +124,79 @@
     }
     attachTimeField("start_time");
     attachTimeField("end_time");
+
+    // Weekday multiple-choice. Internally we still use cron day tokens
+    // (mon..sun), but the UI is fully localized to German.
+    const DAYS = [
+      { token: "mon", de: "Mo" },
+      { token: "tue", de: "Di" },
+      { token: "wed", de: "Mi" },
+      { token: "thu", de: "Do" },
+      { token: "fri", de: "Fr" },
+      { token: "sat", de: "Sa" },
+      { token: "sun", de: "So" },
+    ];
+    const TOKEN_TO_IDX = { mon: 0, tue: 1, wed: 2, thu: 3, fri: 4, sat: 5, sun: 6 };
+    const IDX_TO_TOKEN = DAYS.map((d) => d.token);
+
+    function parseFrequency(str) {
+      const s = String(str || "*").trim().toLowerCase();
+      const idx = new Set();
+      if (s === "*" || s === "mon-sun" || s === "all") {
+        for (let i = 0; i < 7; i++) idx.add(i);
+        return idx;
+      }
+      for (const part of s.split(",")) {
+        const p = part.trim();
+        if (p === "") continue;
+        if (p.includes("-")) {
+          const [a, b] = p.split("-").map((x) => TOKEN_TO_IDX[x.trim()]);
+          if (a == null || b == null) continue;
+          let i = a;
+          while (true) {
+            idx.add(i);
+            if (i === b) break;
+            i = (i + 1) % 7;
+            if (i === a) break;
+          }
+        } else if (TOKEN_TO_IDX[p] != null) {
+          idx.add(TOKEN_TO_IDX[p]);
+        }
+      }
+      return idx;
+    }
+
+    function buildFrequency(idxSet) {
+      if (idxSet.size === 0) return "";
+      if (idxSet.size === 7) return "*";
+      return [...idxSet]
+        .sort((a, b) => a - b)
+        .map((i) => IDX_TO_TOKEN[i])
+        .join(",");
+    }
+
+    function formatFrequency(str) {
+      const idx = parseFrequency(str);
+      if (idx.size === 0) return "–";
+      if (idx.size === 7) return "Täglich";
+      return [...idx]
+        .sort((a, b) => a - b)
+        .map((i) => DAYS[i].de)
+        .join(", ");
+    }
+
+    function getFrequency() {
+      const idx = new Set();
+      document.querySelectorAll(".day:checked").forEach((c) => idx.add(TOKEN_TO_IDX[c.value]));
+      return buildFrequency(idx);
+    }
+
+    function setFrequency(str) {
+      const idx = parseFrequency(str);
+      document.querySelectorAll(".day").forEach((c) => {
+        c.checked = idx.has(TOKEN_TO_IDX[c.value]);
+      });
+    }
 
     async function loadStations() {
       const rows = await (await fetch("/api/stations")).json();
@@ -189,7 +274,7 @@
           <td>${r.title}</td>
           <td>${r.station_name}</td>
           <td>${r.start_time}–${r.end_time}</td>
-          <td>${r.frequency}</td>
+          <td>${formatFrequency(r.frequency)}</td>
           <td>${running.has(r.id) ? '<span class="running">● läuft</span>' : (r.enabled ? "geplant" : "pausiert")}</td>
           <td class="row-actions">
             <button data-edit="${r.id}">Bearbeiten</button>
@@ -332,7 +417,7 @@
       $("station_id").value = r.station_id;
       $("start_time").value = r.start_time;
       $("end_time").value = r.end_time;
-      $("frequency").value = r.frequency;
+      setFrequency(r.frequency);
       $("audio_format").value = r.audio_format;
       $("start_time").classList.remove("invalid");
       $("end_time").classList.remove("invalid");
@@ -344,6 +429,7 @@
       $("id").value = "";
       $("start_time").classList.remove("invalid");
       $("end_time").classList.remove("invalid");
+      setFrequency("*");
       $("submit-btn").textContent = "Speichern";
     }
 
@@ -383,13 +469,18 @@
         alert("Ungültige Endzeit. Bitte im Format HH:MM eingeben (z. B. 21:00).");
         return;
       }
+      const freq = getFrequency();
+      if (freq === "") {
+        alert("Bitte mindestens einen Wochentag auswählen.");
+        return;
+      }
       const id = $("id").value;
       const payload = {
         title: $("title").value,
         station_id: $("station_id").value,
         start_time: startNorm,
         end_time: endNorm,
-        frequency: $("frequency").value || "*",
+        frequency: freq,
         audio_format: $("audio_format").value,
       };
       if (id) {
