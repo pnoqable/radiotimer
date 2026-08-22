@@ -271,10 +271,9 @@
     loadStations();
     loadSchedules();
     loadRecordings();
-    // Recordings refresh every second (live while recording).
+    // Recordings and schedule status refresh every second (live view).
     setInterval(loadRecordings, 1000);
-    // Sender/Sendungen/Status change rarely, refresh less often.
-    setInterval(() => { loadStations(); loadSchedules(); }, 15000);
+    setInterval(loadSchedules, 1000);
   </script>
 </body>
 </html>
