@@ -7,7 +7,7 @@ from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 import src.config  # noqa: ensure package imports work
@@ -156,10 +156,10 @@ def api_delete_station(station_id: str) -> dict[str, bool]:
     return {"ok": True}
 
 
-@app.get("/api/stations/{station_id}/resolve")
-async def api_resolve_station(station_id: str) -> dict[str, Any]:
-    # Resolve the (possibly .m3u/.pls) station URL to the direct stream URL so
-    # it can be tested/played directly in a browser <audio> element.
+@app.get("/api/stations/{station_id}/open")
+async def api_open_station(station_id: str) -> RedirectResponse:
+    # Resolve the (possibly .m3u/.pls) station URL to the direct stream URL and
+    # redirect to it, so a small popup window can play the stream directly.
     station = get_station(station_id)
     if not station:
         raise HTTPException(status_code=404, detail="Not found")
@@ -167,7 +167,7 @@ async def api_resolve_station(station_id: str) -> dict[str, Any]:
         url = await resolve_stream_url(station["url"])
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Konnte Stream-URL nicht auflösen: {e}")
-    return {"url": url}
+    return RedirectResponse(url=url, status_code=307)
 
 
 # ---------------------------------------------------------------------------
