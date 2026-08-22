@@ -101,10 +101,10 @@ def test_recording_task_avoids_overwrite(tmp_path, monkeypatch):
         stream_url=ValidUrl("http://example.com/stream.mp3"),
     )
     assert task.file_path == (
-        tmp_path / "BR Klassik" / "Testsendung" / "2026-01-02 18-00 1.mp3"
+        tmp_path / "BR Klassik" / "Testsendung" / "2026-01-02 18-00 2.mp3"
     )
 
-    # A second collision bumps the number again.
+    # A second collision bumps the number again (3).
     task.file_path.write_text("x")
     task2 = RecordingTask(
         title="Testsendung",
@@ -115,7 +115,7 @@ def test_recording_task_avoids_overwrite(tmp_path, monkeypatch):
         stream_url=ValidUrl("http://example.com/stream.mp3"),
     )
     assert task2.file_path == (
-        tmp_path / "BR Klassik" / "Testsendung" / "2026-01-02 18-00 2.mp3"
+        tmp_path / "BR Klassik" / "Testsendung" / "2026-01-02 18-00 3.mp3"
     )
 
 
