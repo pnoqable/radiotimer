@@ -31,7 +31,7 @@
     <form id="station-form">
       <input type="hidden" id="station-id" />
       <label>Name<input id="station-name" required /></label>
-      <label>Stream/Playlist-URL<input id="station-url" required placeholder="https://.../stream.m3u" /></label>
+      <label>Stream/Playlist-URL<input id="station-url" required placeholder="http://.../...m3u" /></label>
       <button type="submit" id="station-submit">Sender speichern</button>
       <button type="button" id="station-reset">Abbrechen</button>
     </form>
@@ -68,6 +68,7 @@
 
     async function loadStations() {
       const rows = await (await fetch("/api/stations")).json();
+      rows.sort((a, b) => a.name.localeCompare(b.name, "de", { sensitivity: "base" }));
       const tb = $("stations").querySelector("tbody");
       tb.innerHTML = "";
       const sel = $("station_id");
