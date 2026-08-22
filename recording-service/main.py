@@ -1,6 +1,7 @@
 import logging
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -207,14 +208,24 @@ def api_delete_schedule(schedule_id: str) -> dict[str, bool]:
 
 @app.get("/api/status")
 def api_status() -> dict[str, Any]:
+    now = utils.TimeProvider().get_current_time()
     jobs = []
     for job in scheduler_service.scheduler.get_jobs():
+        due = False
+        row = get_schedule(job.id)
+        if row and row["enabled"]:
+            try:
+                period = build_schedule(row).resolve_recording_period(now)
+                due = period.start <= now <= period.end
+            except Exception:
+                due = False
         jobs.append(
             {
                 "id": job.id,
                 "name": job.name,
                 "next_run": str(job.next_run_time),
                 "running": is_active(job.id),
+                "due": due,
             }
         )
     return {"jobs": jobs}
@@ -257,6 +268,35 @@ def _prune_empty_dirs(directory: Path, base: Path) -> None:
 @app.post("/api/recordings/{schedule_id}/stop")
 def api_stop(schedule_id: str) -> dict[str, bool]:
     return {"stopped": stop(schedule_id)}
+
+
+@app.post("/api/recordings/{schedule_id}/start")
+def api_start(schedule_id: str) -> dict[str, Any]:
+    row = get_schedule(schedule_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Not found")
+    if not row["enabled"]:
+        raise HTTPException(status_code=400, detail="Schedule is disabled")
+    now = utils.TimeProvider().get_current_time()
+    period = build_schedule(row).resolve_recording_period(now)
+    if not (period.start <= now <= period.end):
+        raise HTTPException(
+            status_code=400, detail="Not currently within the recording window"
+        )
+    if is_active(schedule_id):
+        return {"started": False, "reason": "already running"}
+    # Re-fire the existing cron job immediately; subsequent runs follow the
+    # normal schedule. If the job is somehow missing, recreate it first.
+    try:
+        scheduler_service.scheduler.modify_job(
+            schedule_id, next_run_time=datetime.now(timezone.utc)
+        )
+    except Exception:
+        reload_job(schedule_id)
+        scheduler_service.scheduler.modify_job(
+            schedule_id, next_run_time=datetime.now(timezone.utc)
+        )
+    return {"started": True}
 
 
 @app.get("/")

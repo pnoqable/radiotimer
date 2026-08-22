@@ -133,6 +133,7 @@
       const rows = await (await fetch("/api/schedules")).json();
       const status = await (await fetch("/api/status")).json();
       const running = new Set(status.jobs.filter(j => j.running).map(j => j.id));
+      const due = new Set(status.jobs.filter(j => j.due && !j.running).map(j => j.id));
       const tb = $("schedules").querySelector("tbody");
       tb.innerHTML = "";
       for (const r of rows) {
@@ -146,13 +147,14 @@
           <td class="row-actions">
             <button data-edit="${r.id}">Bearbeiten</button>
             <button data-del="${r.id}">Löschen</button>
-            ${running.has(r.id) ? `<button data-stop="${r.id}">Stop</button>` : ""}
+            ${running.has(r.id) ? `<button data-stop="${r.id}">Stop</button>` : (due.has(r.id) ? `<button data-start="${r.id}">Starten</button>` : "")}
           </td>`;
         tb.appendChild(tr);
       }
       tb.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => editSchedule(b.dataset.edit));
       tb.querySelectorAll("[data-del]").forEach(b => b.onclick = () => delSchedule(b.dataset.del));
       tb.querySelectorAll("[data-stop]").forEach(b => b.onclick = () => stopSchedule(b.dataset.stop));
+      tb.querySelectorAll("[data-start]").forEach(b => b.onclick = () => startSchedule(b.dataset.start));
     }
 
     let _expandedFolders = new Set();
@@ -301,7 +303,18 @@
     }
 
     async function stopSchedule(id) {
+      if (!confirm("Aufnahme wirklich stoppen?")) return;
       await fetch("/api/recordings/" + id + "/stop", { method: "POST" });
+      loadSchedules();
+    }
+
+    async function startSchedule(id) {
+      const res = await fetch("/api/recordings/" + id + "/start", { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert("Konnte Aufnahme nicht starten: " + (err.detail || res.status));
+        return;
+      }
       loadSchedules();
     }
 
