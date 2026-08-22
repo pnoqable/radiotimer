@@ -80,6 +80,45 @@ def test_recording_task_path_uses_pattern(monkeypatch, tmp_path):
     assert task.file_path == tmp_path / "BR Klassik" / "Testsendung" / "2026-01-02 18-00.mp3"
 
 
+def test_recording_task_avoids_overwrite(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "PATTERN", "{station}/{title}/{date} {start_hm}.{ext}")
+
+    start = pendulum.datetime(2026, 1, 2, 18, 0, 0, tz="UTC")
+    end = pendulum.datetime(2026, 1, 2, 19, 0, 0, tz="UTC")
+    period = utils.TimePeriod(start, end)
+
+    # The original file already exists (e.g. from a prior run / restart).
+    first = tmp_path / "BR Klassik" / "Testsendung" / "2026-01-02 18-00.mp3"
+    first.parent.mkdir(parents=True)
+    first.write_text("x")
+
+    task = RecordingTask(
+        title="Testsendung",
+        station="BR Klassik",
+        recording_period=period,
+        base_dir=tmp_path,
+        audio_format="mp3",
+        stream_url=ValidUrl("http://example.com/stream.mp3"),
+    )
+    assert task.file_path == (
+        tmp_path / "BR Klassik" / "Testsendung" / "2026-01-02 18-00 1.mp3"
+    )
+
+    # A second collision bumps the number again.
+    task.file_path.write_text("x")
+    task2 = RecordingTask(
+        title="Testsendung",
+        station="BR Klassik",
+        recording_period=period,
+        base_dir=tmp_path,
+        audio_format="mp3",
+        stream_url=ValidUrl("http://example.com/stream.mp3"),
+    )
+    assert task2.file_path == (
+        tmp_path / "BR Klassik" / "Testsendung" / "2026-01-02 18-00 2.mp3"
+    )
+
+
 @pytest.mark.asyncio
 async def test_schedule_resolves_station_url(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "TIME_ZONE", "Europe/Berlin")
