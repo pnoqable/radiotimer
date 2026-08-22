@@ -55,7 +55,18 @@ class RecordingTask:
             ext=self.audio_format,
             id=str(self.id),
         )
-        return self.base_dir / rel
+        path = self.base_dir / rel
+        # Avoid overwriting an existing recording (e.g. on a reconnect or a
+        # server restart): append a sequential number before the extension.
+        if path.exists():
+            i = 1
+            while True:
+                candidate = path.with_name(f"{path.stem} {i}{path.suffix}")
+                if not candidate.exists():
+                    break
+                i += 1
+            path = candidate
+        return path
 
 
 def _safe_name(name: str) -> str:
