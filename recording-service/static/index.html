@@ -19,7 +19,7 @@
     .card { border: 1px solid #8884; border-radius: 8px; padding: 1rem; margin-top: 1rem; }
     details { margin-left: 1rem; }
     summary { cursor: pointer; font-weight: 600; }
-    .file-row { display: flex; gap: .5rem; align-items: center; padding: .15rem 0; }
+    .file-row { display: flex; gap: .5rem; align-items: center; padding: .15rem 0 0 1.5rem; }
     .muted { color: #888; }
   </style>
 </head>
@@ -155,6 +155,46 @@
 
     let _expandedFolders = new Set();
     let _lastRecordings = null;
+    let _prefsInitialized = false;
+
+    // Persist the open/closed folder state in a cookie so it survives a
+    // full page reload (not just the 1s auto-refresh).
+    const EXPANDED_COOKIE = "radiotimer_expanded";
+
+    function loadExpandedState() {
+      const m = document.cookie.match(
+        new RegExp("(?:^|;\\s*)" + EXPANDED_COOKIE + "=([^;]*)")
+      );
+      if (!m) return;
+      try {
+        const arr = JSON.parse(decodeURIComponent(m[1]));
+        if (Array.isArray(arr)) {
+          _expandedFolders = new Set(arr);
+          _prefsInitialized = true;
+        }
+      } catch (e) {
+        /* ignore malformed cookie */
+      }
+    }
+
+    function saveExpandedState() {
+      _prefsInitialized = true;
+      const value = encodeURIComponent(JSON.stringify([..._expandedFolders]));
+      document.cookie =
+        EXPANDED_COOKIE + "=" + value + "; path=/; max-age=31536000";
+    }
+
+    // Re-read the current open/closed state from the DOM and persist it.
+    function syncExpandedFromDom() {
+      const open = new Set();
+      document
+        .querySelectorAll("#recordings details[data-path]")
+        .forEach((d) => {
+          if (d.open) open.add(d.dataset.path);
+        });
+      _expandedFolders = open;
+      saveExpandedState();
+    }
 
     async function loadRecordings() {
       const data = await (await fetch("/api/recordings")).json();
@@ -165,16 +205,12 @@
       if (json === _lastRecordings) {
         return;
       }
+      const first = _lastRecordings === null;
       _lastRecordings = json;
 
-      // Capture the exact open/closed state of folders before we rebuild.
-      const open = new Set();
-      document
-        .querySelectorAll("#recordings details[data-path]")
-        .forEach((d) => {
-          if (d.open) open.add(d.dataset.path);
-        });
-      _expandedFolders = open;
+      // On the first render, keep the state loaded from the cookie.
+      // Afterwards, capture the current open/closed state from the DOM.
+      if (!first) syncExpandedFromDom();
 
       const root = $("recordings");
       root.innerHTML = "";
@@ -221,10 +257,15 @@
       const path = parts.join("/");
       const details = document.createElement("details");
       details.dataset.path = path;
-      details.open = depth < 1 || _expandedFolders.has(path);
+      // Before the user has expressed any preference (no cookie yet), keep
+      // the top-level (sender) folders open; afterwards honour the cookie
+      // for every level, including the senders.
+      const defaultOpen = !_prefsInitialized && depth < 1;
+      details.open = defaultOpen || _expandedFolders.has(path);
       const summary = document.createElement("summary");
       summary.textContent = node.name;
       details.appendChild(summary);
+      details.addEventListener("toggle", syncExpandedFromDom);
       for (const child of node.children) {
         details.appendChild(renderNode(child, parts, depth + 1));
       }
@@ -284,6 +325,7 @@
 
     loadStations();
     loadSchedules();
+    loadExpandedState();
     loadRecordings();
     // Recordings and schedule status refresh every second (live view).
     setInterval(loadRecordings, 1000);
