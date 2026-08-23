@@ -359,6 +359,53 @@ def test_recordings_live_rejects_traversal(tmp_path, monkeypatch):
         assert res.status_code == 400
 
 
+def test_podcast_feed_lists_recordings(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(settings, "PUBLIC_URL", "http://example.com")
+    import main as m
+
+    rec = tmp_path / "BR" / "Jazz" / "2026-08-10 23-05.mp3"
+    rec.parent.mkdir(parents=True)
+    rec.write_bytes(b"data")
+    rel = rec.relative_to(tmp_path).as_posix()
+
+    with TestClient(m.app) as client:
+        res = client.get(
+            "/api/podcast?folder=" + urllib.parse.quote("BR/Jazz"),
+        )
+        assert res.status_code == 200
+        assert res.headers["content-type"].startswith("application/rss+xml")
+        body = res.text
+        assert "<rss" in body and "<channel>" in body
+        # Enclosure points at the static recording endpoint with an absolute URL.
+        assert "http://example.com/api/recordings/live?path=" in body
+        assert urllib.parse.quote(rel) in body
+        assert "2026-08-10 23-05" in body
+
+
+def test_podcast_feed_rejects_traversal(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")
+    import main as m
+
+    with TestClient(m.app) as client:
+        res = client.get(
+            "/api/podcast?folder=" + urllib.parse.quote("../../etc")
+        )
+        assert res.status_code == 400
+
+
+def test_podcast_feed_404_for_missing_folder(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")
+    import main as m
+
+    with TestClient(m.app) as client:
+        res = client.get("/api/podcast?folder=" + urllib.parse.quote("nope"))
+        assert res.status_code == 404
+
+
 def test_update_without_enabled_keeps_state(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
     monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")

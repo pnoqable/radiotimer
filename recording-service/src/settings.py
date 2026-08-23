@@ -28,3 +28,9 @@ REENCODE = os.getenv("RADIOTIMER_REENCODE", "false").lower() in ("1", "true", "y
 
 # Target bitrate used when re-encoding is enabled.
 REENCODE_BITRATE = os.getenv("RADIOTIMER_REENCODE_BITRATE", "192k")
+
+# Public base URL used to build absolute links in podcast feeds (enclosure
+# URLs). If unset, the request's base URL is used, which is correct when the
+# app is reached directly but may be wrong behind a reverse proxy -- set this
+# to e.g. "https://radiotimer.example.com" in that case.
+PUBLIC_URL = os.getenv("RADIOTIMER_PUBLIC_URL") or None
