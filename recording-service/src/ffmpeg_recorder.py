@@ -9,6 +9,11 @@ logger = logging.getLogger(__name__)
 # so the web UI / API can report and stop running recordings.
 _active: dict[str, asyncio.subprocess.Process] = {}
 
+# Output file paths of active recordings, keyed by the same run id. Used to
+# recognise which recordings are still being written (for live/timeshift
+# playback of a running recording).
+_paths: dict[str, Path] = {}
+
 
 async def record(
     run_id: str,
@@ -56,6 +61,7 @@ async def record(
         stderr=asyncio.subprocess.PIPE,
     )
     _active[run_id] = proc
+    _paths[run_id] = output_path
 
     try:
         if stop_event is not None:
@@ -72,6 +78,7 @@ async def record(
             )
     finally:
         _active.pop(run_id, None)
+        _paths.pop(run_id, None)
 
 
 async def _wait_with_stop(
@@ -101,3 +108,50 @@ def stop(run_id: str) -> bool:
         proc.terminate()
         return True
     return False
+
+
+def is_live_path(path: Path) -> bool:
+    """Return True if ``path`` is currently being written by a running recording."""
+    target = Path(path).resolve()
+    return any(Path(p).resolve() == target for p in _paths.values())
+
+
+async def iter_live_file(path: Path, chunk_size: int = 64 * 1024):
+    """Stream a (possibly still growing) recording file to the client.
+
+    Behaves like a radio stream: starts at the beginning and keeps following
+    the file as new bytes are written, so the listener hears the recording
+    time-shifted (from its start) and catches up to "now" without hitting the
+    virtual end that a static file server would report.
+
+    Yields until the recording has finished and the final bytes have been
+    flushed, then stops.
+    """
+    path = Path(path)
+    # The writer may not have created the file yet; wait briefly for it.
+    waited = 0.0
+    while not path.exists():
+        if not is_live_path(path):
+            # Recording ended before the file ever appeared.
+            return
+        await asyncio.sleep(0.3)
+        waited += 0.3
+        if waited > 30:
+            return
+
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(chunk_size)
+            if chunk:
+                yield chunk
+            elif is_live_path(path):
+                # At EOF but still recording: wait for more data.
+                await asyncio.sleep(1)
+            else:
+                # Recording finished: give ffmpeg a moment to flush the last
+                # bytes, then stream them and stop.
+                await asyncio.sleep(1)
+                tail = f.read()
+                if tail:
+                    yield tail
+                break

@@ -1,12 +1,13 @@
 import logging
 import os
+import urllib.parse
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 import src.config  # noqa: ensure package imports work
@@ -25,12 +26,12 @@ from src.db import (
     update_schedule,
     update_station,
 )
-from src.ffmpeg_recorder import is_active, stop
+from src.ffmpeg_recorder import is_active, is_live_path, iter_live_file, stop
 from src.playlist import resolve_stream_url
 from src.recording_service import RecordAudioService
 from src.schedule_builder import build_schedule
 from src.scheduler_service import RecordingSchedulerService
-from src.settings import OUTPUT_DIR
+from src import settings
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 # Ensure the recordings directory exists before mounting it as static files
 # (StaticFiles checks existence at import time, before the lifespan runs).
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+settings.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 _AUDIO_EXTS = (".mp3", ".mp4", ".m4a", ".ogg")
 
@@ -81,14 +82,14 @@ def _build_recordings_tree(root: Path) -> dict[str, Any]:
         if path.is_dir():
             node["children"].append(_build_recordings_tree(path))
         elif path.suffix.lower() in _AUDIO_EXTS:
-            rel = path.relative_to(OUTPUT_DIR).as_posix()
+            rel = path.relative_to(settings.OUTPUT_DIR).as_posix()
             node["children"].append(
                 {
                     "name": path.name,
                     "type": "file",
                     "path": rel,
-                    "size": path.stat().st_size,
-                    "url": f"/files/{rel}",
+            "size": path.stat().st_size,
+            "url": f"/api/recordings/live?path={urllib.parse.quote(rel)}",
                 }
             )
     node["children"].sort(key=lambda c: c["name"].lower())
@@ -98,7 +99,7 @@ def _build_recordings_tree(root: Path) -> dict[str, Any]:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     utils.setup_logging(logging.INFO)
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    settings.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     init_db()
     load_all_schedules()
     scheduler_service.run()
@@ -252,17 +253,17 @@ def api_status() -> dict[str, Any]:
 
 @app.get("/api/recordings")
 def api_recordings() -> dict[str, Any]:
-    if not OUTPUT_DIR.exists():
-        return {"tree": {"name": OUTPUT_DIR.name, "type": "folder", "children": []}}
-    tree = _build_recordings_tree(OUTPUT_DIR)
+    if not settings.OUTPUT_DIR.exists():
+        return {"tree": {"name": settings.OUTPUT_DIR.name, "type": "folder", "children": []}}
+    tree = _build_recordings_tree(settings.OUTPUT_DIR)
     return {"tree": tree}
 
 
 @app.delete("/api/recordings")
 def api_delete_recording(path: str = Query(...)) -> dict[str, bool]:
-    base = OUTPUT_DIR.resolve()
+    base = settings.OUTPUT_DIR.resolve()
     target = (base / path).resolve()
-    # Prevent path traversal: the resolved target must stay inside OUTPUT_DIR.
+    # Prevent path traversal: the resolved target must stay inside settings.OUTPUT_DIR.
     if target != base and base not in target.parents:
         raise HTTPException(status_code=400, detail="Invalid path")
     if not target.is_file():
@@ -270,6 +271,35 @@ def api_delete_recording(path: str = Query(...)) -> dict[str, bool]:
     target.unlink()
     _prune_empty_dirs(target.parent, base)
     return {"ok": True}
+
+
+@app.get("/api/recordings/live")
+def api_recordings_live(path: str = Query(...)):
+    """Stream a recording file.
+
+    If the file is currently being recorded, it is served as a live
+    (timeshift) stream that follows the growing file, so the listener starts
+    at the beginning and catches up to "now". Finished files are served
+    statically.
+    """
+    base = settings.OUTPUT_DIR.resolve()
+    target = (base / path).resolve()
+    # Prevent path traversal: the resolved target must stay inside settings.OUTPUT_DIR.
+    if target != base and base not in target.parents:
+        raise HTTPException(status_code=400, detail="Invalid path")
+
+    if is_live_path(target):
+        import mimetypes
+
+        media_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+        return StreamingResponse(
+            iter_live_file(target),
+            media_type=media_type,
+        )
+
+    if target.is_file():
+        return FileResponse(target)
+    raise HTTPException(status_code=404, detail="Not found")
 
 
 def _prune_empty_dirs(directory: Path, base: Path) -> None:
@@ -289,7 +319,7 @@ def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
-app.mount("/files", StaticFiles(directory=OUTPUT_DIR), name="files")
+app.mount("/files", StaticFiles(directory=settings.OUTPUT_DIR), name="files")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
