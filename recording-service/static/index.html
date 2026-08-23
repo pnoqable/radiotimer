@@ -409,6 +409,7 @@
         row.className = "file-row";
         const size = node.size ? (node.size / 1024 / 1024).toFixed(2) + " MB" : "";
         row.innerHTML = `
+          ${node.live ? '<span class="dot"></span>' : ''}
           <a href="${node.url}" onclick="window.open(this.href,'player','width=600,height=200');return false;">${node.name}</a>
           <span class="muted">(${size})</span>
           <a href="javascript:void(0)" class="del-link" data-del="${node.path}">[X]</a>`;
