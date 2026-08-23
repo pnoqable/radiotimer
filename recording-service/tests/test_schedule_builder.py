@@ -63,6 +63,7 @@ def test_build_schedule_midnight_wrap(monkeypatch, tmp_path):
 def test_recording_task_path_uses_pattern(monkeypatch, tmp_path):
     # Adopted from the old "VLC Timer": <station>/<title>/<date> <HH-MM>.mp3
     monkeypatch.setattr(settings, "PATTERN", "{station}/{title}/{date} {start_hm}.{ext}")
+    monkeypatch.setattr(settings, "TIME_ZONE", "UTC")
 
     start = pendulum.datetime(2026, 1, 2, 18, 0, 0, tz="UTC")
     end = pendulum.datetime(2026, 1, 2, 19, 0, 0, tz="UTC")
@@ -85,6 +86,7 @@ def test_recording_task_does_not_renumber_when_file_exists(tmp_path, monkeypatch
     # defined start. No sequential counter is appended when the file already
     # exists (ffmpeg's -y overwrites instead).
     monkeypatch.setattr(settings, "PATTERN", "{station}/{title}/{date} {start_hm}.{ext}")
+    monkeypatch.setattr(settings, "TIME_ZONE", "UTC")
 
     start = pendulum.datetime(2026, 1, 2, 18, 0, 0, tz="UTC")
     end = pendulum.datetime(2026, 1, 2, 19, 0, 0, tz="UTC")
@@ -112,6 +114,7 @@ def test_recording_task_path_uses_actual_start(tmp_path, monkeypatch):
     # When an actual start time is supplied (the real recording start), the
     # filename timestamp uses it instead of the schedule's defined start.
     monkeypatch.setattr(settings, "PATTERN", "{station}/{title}/{date} {start_hm}.{ext}")
+    monkeypatch.setattr(settings, "TIME_ZONE", "UTC")
 
     defined = pendulum.datetime(2026, 1, 2, 18, 0, 0, tz="UTC")
     end = pendulum.datetime(2026, 1, 2, 19, 0, 0, tz="UTC")
@@ -129,6 +132,31 @@ def test_recording_task_path_uses_actual_start(tmp_path, monkeypatch):
     )
     assert task.file_path == (
         tmp_path / "BR Klassik" / "Testsendung" / "2026-01-02 20-03.mp3"
+    )
+
+
+def test_recording_task_path_uses_local_timezone(tmp_path, monkeypatch):
+    # The filename timestamp is rendered in the configured local timezone,
+    # not UTC. 20:03 UTC on 2026-01-02 is 15:03 in New York (EST, UTC-5).
+    monkeypatch.setattr(settings, "PATTERN", "{station}/{title}/{date} {start_hm}.{ext}")
+    monkeypatch.setattr(settings, "TIME_ZONE", "America/New_York")
+
+    defined = pendulum.datetime(2026, 1, 2, 18, 0, 0, tz="UTC")
+    end = pendulum.datetime(2026, 1, 2, 19, 0, 0, tz="UTC")
+    period = utils.TimePeriod(defined, end)
+    actual = pendulum.datetime(2026, 1, 2, 20, 3, 17, tz="UTC")
+
+    task = RecordingTask(
+        title="Testsendung",
+        station="BR Klassik",
+        recording_period=period,
+        base_dir=tmp_path,
+        audio_format="mp3",
+        stream_url=ValidUrl("http://example.com/stream.mp3"),
+        actual_start=actual,
+    )
+    assert task.file_path == (
+        tmp_path / "BR Klassik" / "Testsendung" / "2026-01-02 15-03.mp3"
     )
 
 
