@@ -51,6 +51,11 @@ async def record(
         str(int(duration_seconds)),
         "-c",
         "copy",
+        # Flush every packet to disk immediately instead of buffering. This
+        # keeps the recorded file growing in small, frequent chunks so a
+        # timeshift listener following the file hears "now" with low latency.
+        "-flush_packets",
+        "1",
         str(output_path),
     ]
 
