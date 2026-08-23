@@ -114,6 +114,35 @@ def test_toggle_schedule_disables_and_enables(tmp_path, monkeypatch):
         assert sched_mock.add_job.call_count == add_after_disable + 1
 
 
+def test_delete_schedule_stops_recording(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")
+    import main as m
+
+    db.init_db()
+    station = db.create_station({"name": "BR", "url": "http://x/y.m3u"})
+    sched = db.create_schedule(
+        {
+            "title": "S",
+            "station_id": station["id"],
+            "start_time": "12:00",
+            "end_time": "12:01",
+            "frequency": "*",
+        }
+    )
+
+    stop_spy = mock.MagicMock()
+    monkeypatch.setattr(m, "stop", stop_spy)
+
+    with TestClient(m.app) as client:
+        res = client.delete(f"/api/schedules/{sched['id']}")
+        assert res.status_code == 200
+        stop_spy.assert_called_once_with(sched["id"])
+
+        # schedule is gone afterwards
+        assert client.get(f"/api/schedules/{sched['id']}").status_code == 404
+
+
 def test_recordings_tree_marks_live_file(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
     monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")

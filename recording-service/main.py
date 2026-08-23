@@ -220,6 +220,7 @@ def api_update_schedule(schedule_id: str, payload: dict[str, Any]) -> dict[str, 
 def api_delete_schedule(schedule_id: str) -> dict[str, bool]:
     if not delete_schedule(schedule_id):
         raise HTTPException(status_code=404, detail="Not found")
+    stop(schedule_id)
     try:
         scheduler_service.scheduler.remove_job(schedule_id)
     except Exception:
