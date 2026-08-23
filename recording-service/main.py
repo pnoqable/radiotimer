@@ -1,12 +1,17 @@
 import logging
+import mimetypes
 import os
+import re
 import urllib.parse
+import xml.sax.saxutils as _xml_escape
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Query
+import pendulum
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -102,6 +107,100 @@ def _build_recordings_tree(root: Path) -> dict[str, Any]:
             )
     node["children"].sort(key=lambda c: c["name"].lower())
     return node
+
+
+_FILE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})[ _](\d{2})-(\d{2})")
+
+
+def _pubdate_for_file(path: Path) -> datetime:
+    """Best-effort publication date for a recording file.
+
+    Recording files are named "<YYYY>-<MM>-<DD> <HH>-<MM>.<ext>", which carries
+    the start time. Fall back to the file mtime if the name does not match.
+    """
+    tz = pendulum.timezone(settings.TIME_ZONE)
+    m = _FILE_RE.match(path.stem)
+    if m:
+        try:
+            return pendulum.datetime(
+                int(m.group(1)), int(m.group(2)), int(m.group(3)),
+                int(m.group(4)), int(m.group(5)), tz=tz,
+            )
+        except Exception:
+            pass
+    return pendulum.from_timestamp(path.stat().st_mtime, tz=tz)
+
+
+def _rfc822(dt: datetime) -> str:
+    return dt.strftime("%a, %d %b %Y %H:%M:%S %z")
+
+
+def _build_podcast_feed(folder_rel: str, request: Request) -> str:
+    """Build an RSS 2.0 podcast feed for all audio files under ``folder_rel``.
+
+    The folder may be any directory under OUTPUT_DIR (a station folder, a
+    single show folder, or empty for everything). Files are listed recursively
+    and sorted newest-first.
+    """
+    base = settings.OUTPUT_DIR.resolve()
+    folder = (base / folder_rel).resolve()
+    # Prevent path traversal: the resolved folder must stay inside OUTPUT_DIR.
+    if folder != base and base not in folder.parents:
+        raise HTTPException(status_code=400, detail="Invalid path")
+    if not folder.is_dir():
+        raise HTTPException(status_code=404, detail="Not found")
+
+    public = (settings.PUBLIC_URL or str(request.base_url).rstrip("/"))
+    feed_path = "/api/podcast?folder=" + urllib.parse.quote(folder_rel)
+    feed_url = public + feed_path
+
+    items = []
+    for entry in sorted(folder.rglob("*")):
+        if not entry.is_file() or entry.suffix.lower() not in _AUDIO_EXTS:
+            continue
+        rel = entry.relative_to(base).as_posix()
+        media_type = mimetypes.guess_type(str(entry))[0] or "application/octet-stream"
+        enc_url = public + "/api/recordings/live?path=" + urllib.parse.quote(rel)
+        items.append(
+            {
+                "title": entry.stem,
+                "enc_url": enc_url,
+                "length": entry.stat().st_size,
+                "type": media_type,
+                "pub": _pubdate_for_file(entry),
+            }
+        )
+    items.sort(key=lambda i: i["pub"], reverse=True)
+
+    title = folder_rel.strip("/").split("/")[-1] or "Aufnahmen"
+    esc = _xml_escape.escape
+    item_xml = []
+    for it in items:
+        item_xml.append(
+            "    <item>\n"
+            f"      <title>{esc(it['title'])}</title>\n"
+            f"      <link>{esc(it['enc_url'])}</link>\n"
+            f"      <guid isPermaLink=\"false\">{esc(it['enc_url'])}</guid>\n"
+            f"      <pubDate>{_rfc822(it['pub'])}</pubDate>\n"
+            f"      <enclosure url=\"{esc(it['enc_url'])}\" length=\"{it['length']}\" type=\"{esc(it['type'])}\"/>\n"
+            f"      <description>{esc(it['title'])}</description>\n"
+            "    </item>"
+        )
+    items_block = "\n".join(item_xml)
+
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">\n'
+        "  <channel>\n"
+        f"    <title>{esc(title)}</title>\n"
+        f"    <link>{esc(feed_url)}</link>\n"
+        f"    <description>Aufnahmen aus {esc(folder_rel or '/')}</description>\n"
+        "    <language>de</language>\n"
+        f"    <lastBuildDate>{_rfc822(pendulum.now(pendulum.timezone(settings.TIME_ZONE)))}</lastBuildDate>\n"
+        f"{items_block}\n"
+        "  </channel>\n"
+        "</rss>\n"
+    )
 
 
 @asynccontextmanager
@@ -319,6 +418,18 @@ def api_recordings_live(path: str = Query(...)):
     if target.is_file():
         return FileResponse(target)
     raise HTTPException(status_code=404, detail="Not found")
+
+
+@app.get("/api/podcast")
+def api_podcast(request: Request, folder: str = Query("")):
+    """Return an RSS 2.0 podcast feed for the given recordings folder.
+
+    ``folder`` is a path relative to OUTPUT_DIR and may point at a station
+    folder, a single show folder, or be empty to cover all recordings. The feed
+    lists every audio file below it (recursively), newest first.
+    """
+    xml = _build_podcast_feed(folder, request)
+    return Response(content=xml, media_type="application/rss+xml")
 
 
 def _prune_empty_dirs(directory: Path, base: Path) -> None:

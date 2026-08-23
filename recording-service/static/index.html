@@ -51,6 +51,7 @@
     a.icon-btn + a.icon-btn,
     a.icon-btn + svg.icon-live,
     svg.icon-live + a.icon-btn { margin-left: .45rem; }
+    summary .podcast-link { margin-left: .45rem; vertical-align: middle; }
     .icon-live { fill: currentColor; stroke: none; color: #2a2;
                  animation: live-pulse 1.4s ease-in-out infinite; }
     @keyframes live-pulse {
@@ -91,6 +92,11 @@
     <symbol id="icon-pause" viewBox="0 0 24 24">
       <rect x="6" y="5" width="4" height="14" rx="1"/>
       <rect x="14" y="5" width="4" height="14" rx="1"/>
+    </symbol>
+    <symbol id="icon-rss" viewBox="0 0 24 24">
+      <circle cx="5" cy="17.5" r="2.5"/>
+      <path d="M5 5a11 11 0 0 1 11 11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+      <path d="M5 10.5a6.5 6.5 0 0 1 6.5 6.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
     </symbol>
   </svg>
   <div class="layout">
@@ -487,6 +493,14 @@
       details.open = defaultOpen || _expandedFolders.has(path);
       const summary = document.createElement("summary");
       summary.textContent = node.name;
+      const feed = document.createElement("a");
+      feed.href = "/api/podcast?folder=" + encodeURIComponent(path);
+      feed.className = "url-link icon-btn podcast-link";
+      feed.title = "Podcast-Feed";
+      feed.target = "_blank";
+      feed.innerHTML = icon('rss');
+      feed.addEventListener("click", (e) => e.stopPropagation());
+      summary.appendChild(feed);
       details.appendChild(summary);
       details.addEventListener("toggle", syncExpandedFromDom);
       for (const child of node.children) {
