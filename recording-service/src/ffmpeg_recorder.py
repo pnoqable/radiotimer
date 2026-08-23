@@ -35,6 +35,11 @@ async def record(
         "1",
         "-reconnect_delay_max",
         "5",
+        # Some stream servers only serve clients with a real User-Agent and
+        # reject ffmpeg's default "Lavf/..." UA (the browser plays fine, but
+        # recording fails with 403). Send a browser-like UA.
+        "-user_agent",
+        "Mozilla/5.0 (radiotimer)",
         "-i",
         str(url),
         "-t",

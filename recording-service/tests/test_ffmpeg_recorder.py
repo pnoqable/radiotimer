@@ -65,6 +65,35 @@ async def test_record_creates_output(stub_ffmpeg, tmp_path):
     assert not ffmpeg_recorder.is_active("job1")
 
 
+async def test_record_command_includes_user_agent(monkeypatch):
+    captured = {}
+
+    class FakeProc:
+        returncode = 0
+        stderr = None
+
+        async def wait(self):
+            return 0
+
+        def terminate(self):
+            pass
+
+    async def fake_exec(*args, **kwargs):
+        captured["cmd"] = list(args)
+        return FakeProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    out = Path("/tmp/rec.mp3")
+    await ffmpeg_recorder.record(
+        run_id="j-ua",
+        url="http://example.com/stream.mp3",
+        duration_seconds=1,
+        output_path=out,
+    )
+    assert "-user_agent" in captured["cmd"]
+    assert any("Mozilla" in str(a) for a in captured["cmd"])
+
+
 async def test_record_stop_event_terminates_early(stub_ffmpeg, tmp_path):
     out = tmp_path / "rec.mp3"
     stop = asyncio.Event()
