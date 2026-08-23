@@ -136,6 +136,48 @@ def test_open_station_redirects_to_stream(tmp_path, monkeypatch):
         assert client.get("/api/stations/nope/open", follow_redirects=False).status_code == 404
 
 
+def test_status_includes_live_url_for_running(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")
+    import main as m
+    from src import ffmpeg_recorder as fr
+
+    db.init_db()
+    station = db.create_station({"name": "BR", "url": "http://x/y.m3u"})
+    sched = db.create_schedule(
+        {
+            "title": "S",
+            "station_id": station["id"],
+            "start_time": "12:00",
+            "end_time": "12:01",
+            "frequency": "*",
+        }
+    )
+
+    job = mock.MagicMock()
+    job.id = sched["id"]
+    job.next_run_time = None
+    sched_mock = mock.MagicMock()
+    sched_mock.get_jobs.return_value = [job]
+    monkeypatch.setattr(m.scheduler_service, "scheduler", sched_mock)
+    monkeypatch.setattr(m, "is_active", lambda _id: True)
+
+    # Pretend this schedule is currently being recorded into this file.
+    live_file = tmp_path / "BR" / "S" / "live.mp3"
+    fr._paths[sched["id"]] = live_file
+
+    try:
+        with TestClient(m.app) as client:
+            status = client.get("/api/status").json()
+            job_status = next(j for j in status["jobs"] if j["id"] == sched["id"])
+            assert job_status["running"] is True
+            assert job_status["live_url"] is not None
+            assert job_status["live_url"].startswith("/api/recordings/live?path=")
+            assert "BR/S/live.mp3" in job_status["live_url"]
+    finally:
+        fr._paths.pop(sched["id"], None)
+
+
 def test_live_file_follows_growth(tmp_path, monkeypatch):
     import asyncio
 
