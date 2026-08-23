@@ -334,7 +334,12 @@
       if (id) {
         await fetch("/api/stations/" + id, { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
       } else {
-        await fetch("/api/stations", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
+        const res = await fetch("/api/stations", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
+        if (res.ok) {
+          const created = await res.json();
+          $("station-id").value = created.id;
+          $("station-submit").textContent = "Änderungen speichern";
+        }
       }
       loadStations();
     };
@@ -571,7 +576,12 @@
       if (id) {
         await fetch("/api/schedules/" + id, { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
       } else {
-        await fetch("/api/schedules", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
+        const res = await fetch("/api/schedules", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
+        if (res.ok) {
+          const created = await res.json();
+          $("id").value = created.id;
+          $("submit-btn").textContent = "Änderungen speichern";
+        }
       }
       loadSchedules();
     };
