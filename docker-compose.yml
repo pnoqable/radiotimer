@@ -8,6 +8,7 @@ services:
       RADIOTIMER_OUTPUT: /app/recordings
       RADIOTIMER_DB: /app/data/radiotimer.db
       RADIOTIMER_TZ: Europe/Berlin
+      RADIOTIMER_REENCODE: yes
     volumes:
       - ./recordings:/app/recordings
       - ./data:/app/data
