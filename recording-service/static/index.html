@@ -48,6 +48,9 @@
             flex: none; }
     .icon-btn { display: inline-flex; align-items: center; gap: .25rem;
                 text-decoration: none; }
+    a.icon-btn + a.icon-btn,
+    a.icon-btn + svg.icon-live,
+    svg.icon-live + a.icon-btn { margin-left: .45rem; }
     .icon-live { fill: currentColor; stroke: none; color: #2a2;
                  animation: live-pulse 1.4s ease-in-out infinite; }
     @keyframes live-pulse {
