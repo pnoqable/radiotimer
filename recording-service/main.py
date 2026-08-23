@@ -54,10 +54,17 @@ def reload_job(schedule_id: str) -> None:
         pass
     row = get_schedule(schedule_id)
     if row and row["enabled"]:
+        schedule = build_schedule(row)
         try:
-            scheduler_service.add_recording_schedule(build_schedule(row))
+            scheduler_service.add_recording_schedule(schedule)
         except Exception:
             logger.exception("Failed to reload schedule %s", schedule_id)
+        # If a recording is currently running but the edited schedule no longer
+        # covers "now", stop it (e.g. the time window was shortened or moved).
+        now = utils.TimeProvider().get_current_time()
+        period = schedule.resolve_recording_period(now)
+        if is_active(schedule_id) and not (period.start <= now < period.end):
+            stop(schedule_id)
     else:
         # A disabled (or deleted) schedule must not keep recording: stop any
         # in-progress run for it. Re-enabling a schedule that is currently

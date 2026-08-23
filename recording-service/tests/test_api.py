@@ -4,7 +4,8 @@ from unittest import mock
 
 import pytest
 from fastapi.testclient import TestClient
-from pendulum import Duration
+import pendulum
+from pendulum import DateTime, Duration
 
 from src import db, settings, utils
 from src.schedule_builder import build_schedule
@@ -141,6 +142,76 @@ def test_delete_schedule_stops_recording(tmp_path, monkeypatch):
 
         # schedule is gone afterwards
         assert client.get(f"/api/schedules/{sched['id']}").status_code == 404
+
+
+def test_reload_job_stops_recording_when_window_moved_out(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(settings, "TIME_ZONE", "UTC")
+    import main as m
+    from src import ffmpeg_recorder as fr
+
+    db.init_db()
+    station = db.create_station({"name": "BR", "url": "http://x/y.m3u"})
+    sched = db.create_schedule(
+        {
+            "title": "S",
+            "station_id": station["id"],
+            "start_time": "12:00",
+            "end_time": "12:01",
+            "frequency": "*",
+        }
+    )
+
+    # Fix "now" outside the edited window.
+    monkeypatch.setattr(m.utils, "get_utc_now", lambda: pendulum.parse("2020-01-01T12:00:00+00:00"))
+
+    # Pretend the recording is currently running.
+    fr._active[sched["id"]] = mock.MagicMock(returncode=None)
+    stop_spy = mock.MagicMock()
+    monkeypatch.setattr(m, "stop", stop_spy)
+    monkeypatch.setattr(m.scheduler_service, "scheduler", mock.MagicMock())
+
+    # Edit the window so it no longer covers "now" (03:00-03:01).
+    db.update_schedule(sched["id"], {**sched, "start_time": "03:00", "end_time": "03:01"})
+    m.reload_job(sched["id"])
+
+    stop_spy.assert_called_once_with(sched["id"])
+    fr._active.pop(sched["id"], None)
+
+
+def test_reload_job_keeps_recording_when_still_in_window(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(settings, "TIME_ZONE", "UTC")
+    import main as m
+    from src import ffmpeg_recorder as fr
+
+    db.init_db()
+    station = db.create_station({"name": "BR", "url": "http://x/y.m3u"})
+    sched = db.create_schedule(
+        {
+            "title": "S",
+            "station_id": station["id"],
+            "start_time": "12:00",
+            "end_time": "12:01",
+            "frequency": "*",
+        }
+    )
+
+    # Fix "now" inside the (unchanged) window.
+    monkeypatch.setattr(m.utils, "get_utc_now", lambda: pendulum.parse("2020-01-01T12:00:30+00:00"))
+
+    fr._active[sched["id"]] = mock.MagicMock(returncode=None)
+    stop_spy = mock.MagicMock()
+    monkeypatch.setattr(m, "stop", stop_spy)
+    monkeypatch.setattr(m.scheduler_service, "scheduler", mock.MagicMock())
+
+    db.update_schedule(sched["id"], {**sched, "title": "S2"})
+    m.reload_job(sched["id"])
+
+    stop_spy.assert_not_called()
+    fr._active.pop(sched["id"], None)
 
 
 def test_recordings_tree_marks_live_file(tmp_path, monkeypatch):
