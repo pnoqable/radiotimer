@@ -92,6 +92,7 @@ async def test_record_command_includes_user_agent(monkeypatch):
     )
     assert "-user_agent" in captured["cmd"]
     assert any("Mozilla" in str(a) for a in captured["cmd"])
+    assert "-flush_packets" in captured["cmd"]
 
 
 async def test_record_stop_event_terminates_early(stub_ffmpeg, tmp_path):
