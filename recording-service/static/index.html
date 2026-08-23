@@ -104,7 +104,7 @@
         <form id="station-form">
           <input type="hidden" id="station-id" />
           <label>Name<input id="station-name" required /></label>
-          <label>Stream/Playlist-URL<input id="station-url" required placeholder="https://.../stream.m3u" /></label>
+          <label>Stream/Playlist-URL<input id="station-url" required /></label>
           <button type="submit" id="station-submit">Sender neu anlegen</button>
           <button type="button" id="station-reset">Abbrechen</button>
         </form>
@@ -120,8 +120,8 @@
           <input type="hidden" id="id" />
           <label>Titel<input id="title" required /></label>
           <label>Sender<select id="station_id" required></select></label>
-          <label>Start (HH:MM)<input id="start_time" required placeholder="20:00" /></label>
-          <label>Ende (HH:MM)<input id="end_time" required placeholder="21:00" /></label>
+          <label>Start (HH:MM)<input id="start_time" required /></label>
+          <label>Ende (HH:MM)<input id="end_time" required /></label>
           <fieldset class="days">
             <legend>Wochentage</legend>
             <label><input type="checkbox" class="day" value="mon" />Montags</label>
@@ -282,6 +282,11 @@
       tb.innerHTML = "";
       const sel = $("station_id");
       sel.innerHTML = "";
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "– bitte Sender wählen –";
+      placeholder.selected = true;
+      sel.appendChild(placeholder);
       for (const s of rows) {
         const tr = document.createElement("tr");
         tr.innerHTML = `
@@ -500,6 +505,7 @@
 
     function resetScheduleForm() {
       $("schedule-form").reset();
+      $("station_id").selectedIndex = 0;
       $("id").value = "";
       $("start_time").classList.remove("invalid");
       $("end_time").classList.remove("invalid");
