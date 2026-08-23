@@ -114,6 +114,29 @@ def test_toggle_schedule_disables_and_enables(tmp_path, monkeypatch):
         assert sched_mock.add_job.call_count == add_after_disable + 1
 
 
+def test_recordings_tree_marks_live_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")
+    import main as m
+    from src import ffmpeg_recorder as fr
+
+    live_file = tmp_path / "BR" / "live.mp3"
+    live_file.parent.mkdir(parents=True)
+    live_file.write_bytes(b"x")
+    finished = tmp_path / "BR" / "old.mp3"
+    finished.write_bytes(b"x")
+
+    fr._paths["fake"] = live_file
+    try:
+        with TestClient(m.app) as client:
+            tree = client.get("/api/recordings").json()["tree"]
+            files = {f["name"]: f for f in tree["children"][0]["children"]}
+            assert files["live.mp3"]["live"] is True
+            assert files["old.mp3"]["live"] is False
+    finally:
+        fr._paths.pop("fake", None)
+
+
 def test_open_station_redirects_to_stream(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
     monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")

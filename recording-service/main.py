@@ -90,6 +90,7 @@ def _build_recordings_tree(root: Path) -> dict[str, Any]:
                     "path": rel,
             "size": path.stat().st_size,
             "url": f"/api/recordings/live?path={urllib.parse.quote(rel)}",
+            "live": is_live_path(path),
                 }
             )
     node["children"].sort(key=lambda c: c["name"].lower())
