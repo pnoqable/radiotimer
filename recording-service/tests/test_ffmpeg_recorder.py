@@ -100,6 +100,39 @@ async def test_record_command_includes_user_agent(monkeypatch):
     assert "ignore_err" in captured["cmd"]
 
 
+async def test_record_command_reenCodes_when_enabled(monkeypatch):
+    captured = {}
+
+    class FakeProc:
+        returncode = 0
+        stderr = None
+
+        async def wait(self):
+            return 0
+
+        def terminate(self):
+            pass
+
+    async def fake_exec(*args, **kwargs):
+        captured["cmd"] = list(args)
+        return FakeProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    monkeypatch.setattr(ffmpeg_recorder.settings, "REENCODE", True)
+    out = Path("/tmp/rec.mp3")
+    await ffmpeg_recorder.record(
+        run_id="j-re",
+        url="http://example.com/stream.mp3",
+        duration_seconds=1,
+        output_path=out,
+    )
+    # Re-encoding path: a real audio codec + bitrate, and no plain copy.
+    assert "-c:a" in captured["cmd"]
+    assert "libmp3lame" in captured["cmd"]
+    assert "192k" in captured["cmd"]
+    assert "copy" not in captured["cmd"]
+
+
 async def test_record_stop_event_terminates_early(stub_ffmpeg, tmp_path):
     out = tmp_path / "rec.mp3"
     stop = asyncio.Event()

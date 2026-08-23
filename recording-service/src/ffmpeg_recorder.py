@@ -3,6 +3,8 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+from src import settings
+
 logger = logging.getLogger(__name__)
 
 # Active ffmpeg processes, keyed by an arbitrary run id (e.g. task/schedule id),
@@ -31,6 +33,21 @@ async def record(
 
     ``ffmpeg_bin`` is the ffmpeg executable (overridable for testing).
     """
+    # Choose the codec. By default we copy (CPU-cheap). When re-encoding is
+    # enabled (settings.REENCODE), transcode to a real codec so the recording
+    # starts on a clean frame and the MP3 first-frame "click" is avoided -- at
+    # the cost of higher CPU load.
+    ext = output_path.suffix.lower().lstrip(".")
+    if settings.REENCODE:
+        codec = {"mp3": "libmp3lame", "aac": "aac", "m4a": "aac", "ogg": "libopus"}.get(ext)
+        codec_args = (
+            ["-c:a", codec, "-b:a", settings.REENCODE_BITRATE]
+            if codec
+            else ["-c", "copy"]
+        )
+    else:
+        codec_args = ["-c", "copy"]
+
     cmd = [
         ffmpeg_bin,
         "-y",
@@ -59,8 +76,7 @@ async def record(
         str(url),
         "-t",
         str(int(duration_seconds)),
-        "-c",
-        "copy",
+        *codec_args,
         # Flush every packet to disk immediately instead of buffering. This
         # keeps the recorded file growing in small, frequent chunks so a
         # timeshift listener following the file hears "now" with low latency.

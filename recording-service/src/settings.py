@@ -18,3 +18,13 @@ PATTERN = os.getenv(
 
 # SQLite database file storing the schedules.
 DB_PATH = Path(os.getenv("RADIOTIMER_DB", "./app.db"))
+
+# Re-encode the stream instead of copying it. Copying is CPU-cheap, but some
+# stations start each recording with a short "click" (MP3 first-frame bit
+# reservoir). Re-encoding removes that at the cost of higher CPU load, so it is
+# off by default and can be enabled to benchmark on low-power hosts (e.g. a
+# Raspberry Pi). Set RADIOTIMER_REENCODE=1 to enable.
+REENCODE = os.getenv("RADIOTIMER_REENCODE", "false").lower() in ("1", "true", "yes", "on")
+
+# Target bitrate used when re-encoding is enabled.
+REENCODE_BITRATE = os.getenv("RADIOTIMER_REENCODE_BITRATE", "192k")
