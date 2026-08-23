@@ -63,18 +63,7 @@
   </style>
 </head>
 <body>
-  <header class="app-header">
-    <svg class="icon app-logo"><use href="#icon-radio"/></svg>
-    <h1>radiotimer</h1>
-  </header>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
-    <symbol id="icon-radio" viewBox="0 0 24 24">
-      <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/>
-      <path d="m12 12 9 9"/>
-      <path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"/>
-      <path d="M5.7 5.7 19.1 19.1"/>
-      <circle cx="12" cy="12" r="3"/>
-    </symbol>
     <symbol id="icon-live" viewBox="0 0 24 24">
       <circle cx="12" cy="12" r="5.5"/>
     </symbol>
@@ -108,6 +97,10 @@
     <div class="col-left">
       <details class="section" open>
         <summary class="section-title">Sender</summary>
+        <table id="stations">
+          <thead><tr><th>Name</th><th>URL</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
         <form id="station-form">
           <input type="hidden" id="station-id" />
           <label>Name<input id="station-name" required /></label>
@@ -115,14 +108,14 @@
           <button type="submit" id="station-submit">Sender neu anlegen</button>
           <button type="button" id="station-reset">Abbrechen</button>
         </form>
-        <table id="stations">
-          <thead><tr><th>Name</th><th>URL</th><th></th></tr></thead>
-          <tbody></tbody>
-        </table>
       </details>
 
       <details class="section" open>
         <summary class="section-title">Sendungen</summary>
+        <table id="schedules">
+          <thead><tr><th>Titel</th><th>Sender</th><th>Zeit</th><th>Wochentage</th><th>Status</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
         <form id="schedule-form">
           <input type="hidden" id="id" />
           <label>Titel<input id="title" required /></label>
@@ -131,21 +124,17 @@
           <label>Ende (HH:MM)<input id="end_time" required placeholder="21:00" /></label>
           <fieldset class="days">
             <legend>Wochentage</legend>
-            <label><input type="checkbox" class="day" value="mon" />Montag</label>
-            <label><input type="checkbox" class="day" value="tue" />Dienstag</label>
-            <label><input type="checkbox" class="day" value="wed" />Mittwoch</label>
-            <label><input type="checkbox" class="day" value="thu" />Donnerstag</label>
-            <label><input type="checkbox" class="day" value="fri" />Freitag</label>
-            <label><input type="checkbox" class="day" value="sat" />Samstag</label>
-            <label><input type="checkbox" class="day" value="sun" />Sonntag</label>
+            <label><input type="checkbox" class="day" value="mon" />Montags</label>
+            <label><input type="checkbox" class="day" value="tue" />Dienstags</label>
+            <label><input type="checkbox" class="day" value="wed" />Mittwochs</label>
+            <label><input type="checkbox" class="day" value="thu" />Donnerstags</label>
+            <label><input type="checkbox" class="day" value="fri" />Freitags</label>
+            <label><input type="checkbox" class="day" value="sat" />Samstags</label>
+            <label><input type="checkbox" class="day" value="sun" />Sonntags</label>
           </fieldset>
           <button type="submit" id="submit-btn">Sendung neu anlegen</button>
           <button type="button" id="reset-btn">Abbrechen</button>
         </form>
-      <table id="schedules">
-        <thead><tr><th>Titel</th><th>Sender</th><th>Zeit</th><th>Wochentage</th><th>Status</th><th></th></tr></thead>
-        <tbody></tbody>
-      </table>
       </details>
     </div>
 
@@ -216,13 +205,13 @@
     // Weekday multiple-choice. Internally we still use cron day tokens
     // (mon..sun), but the UI is fully localized to German.
     const DAYS = [
-      { token: "mon", de: "Mo" },
-      { token: "tue", de: "Di" },
-      { token: "wed", de: "Mi" },
-      { token: "thu", de: "Do" },
-      { token: "fri", de: "Fr" },
-      { token: "sat", de: "Sa" },
-      { token: "sun", de: "So" },
+      { token: "mon", de: "Mo", adv: "Montags" },
+      { token: "tue", de: "Di", adv: "Dienstags" },
+      { token: "wed", de: "Mi", adv: "Mittwochs" },
+      { token: "thu", de: "Do", adv: "Donnerstags" },
+      { token: "fri", de: "Fr", adv: "Freitags" },
+      { token: "sat", de: "Sa", adv: "Samstags" },
+      { token: "sun", de: "So", adv: "Sonntags" },
     ];
     const TOKEN_TO_IDX = { mon: 0, tue: 1, wed: 2, thu: 3, fri: 4, sat: 5, sun: 6 };
     const IDX_TO_TOKEN = DAYS.map((d) => d.token);
@@ -267,6 +256,7 @@
       const idx = parseFrequency(str);
       if (idx.size === 0) return "–";
       if (idx.size === 7) return "Täglich";
+      if (idx.size === 1) return DAYS[[...idx][0]].adv;
       return [...idx]
         .sort((a, b) => a - b)
         .map((i) => DAYS[i].de)
@@ -341,7 +331,6 @@
       } else {
         await fetch("/api/stations", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
       }
-      resetStationForm();
       loadStations();
     };
     $("station-reset").onclick = resetStationForm;
@@ -514,7 +503,7 @@
       $("id").value = "";
       $("start_time").classList.remove("invalid");
       $("end_time").classList.remove("invalid");
-      setFrequency("*");
+      document.querySelectorAll(".day").forEach((c) => { c.checked = false; });
       $("submit-btn").textContent = "Sendung neu anlegen";
     }
 
@@ -578,7 +567,6 @@
       } else {
         await fetch("/api/schedules", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
       }
-      resetScheduleForm();
       loadSchedules();
     };
 
