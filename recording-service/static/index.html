@@ -292,9 +292,9 @@
       for (const s of rows) {
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td><a href="javascript:void(0)" class="url-link icon-btn" data-edit="${s.id}" title="Bearbeiten">${icon('edit')} ${s.name}</a></td>
+          <td>${s.name}</td>
           <td><a href="/api/stations/${s.id}/open" class="url-link icon-btn" onclick="window.open(this.href,'player','width=600,height=200');return false;" title="Stream öffnen">${icon('player')} ${s.url}</a></td>
-          <td><a href="javascript:void(0)" class="del-link icon-btn" data-del="${s.id}" title="Löschen">${icon('trash')}</a></td>`;
+          <td><a href="javascript:void(0)" class="url-link icon-btn" data-edit="${s.id}" title="Bearbeiten">${icon('edit')}</a><a href="javascript:void(0)" class="del-link icon-btn" data-del="${s.id}" title="Löschen">${icon('trash')}</a></td>`;
         tb.appendChild(tr);
         const opt = document.createElement("option");
         opt.value = s.id; opt.textContent = s.name;
@@ -358,12 +358,12 @@
               : `läuft`)
           : `<a href="javascript:void(0)" class="url-link icon-btn" data-toggle="${r.id}">${r.enabled ? icon('calendar') + ' geplant' : icon('pause') + ' pausiert'}</a>`;
         tr.innerHTML = `
-          <td><a href="javascript:void(0)" class="url-link icon-btn" data-edit="${r.id}">${icon('edit')} ${r.title}</a></td>
+          <td>${r.title}</td>
           <td>${r.station_name}</td>
           <td>${r.start_time}–${r.end_time}</td>
           <td>${formatFrequency(r.frequency)}</td>
           <td>${statusCell}</td>
-          <td>${running.has(r.id) ? liveIcon() : `<a href="javascript:void(0)" class="del-link icon-btn" data-del="${r.id}" title="Löschen">${icon('trash')}</a>`}</td>`;
+          <td><a href="javascript:void(0)" class="url-link icon-btn" data-edit="${r.id}" title="Bearbeiten">${icon('edit')}</a>${running.has(r.id) ? liveIcon() : `<a href="javascript:void(0)" class="del-link icon-btn" data-del="${r.id}" title="Löschen">${icon('trash')}</a>`}</td>`;
         tb.appendChild(tr);
       }
       tb.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => editSchedule(b.dataset.edit));
