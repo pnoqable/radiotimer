@@ -36,17 +36,61 @@
     }
     details.section > summary.section-title::-webkit-details-marker { display: none; }
     /* Green dot indicating a recording that is currently running. */
-    .dot { display: inline-block; width: .6rem; height: .6rem; border-radius: 50%;
-           background: #2a2; vertical-align: middle; }
     .file-row { display: flex; gap: .5rem; align-items: center; padding: .15rem 0 0 1.5rem; }
     .del-link { color: #c33; text-decoration: none; cursor: pointer; }
     .url-link { color: inherit; text-decoration: underline; cursor: pointer; }
     .url-link.running { color: #2a2; }
     .del-link:hover { text-decoration: underline; }
     .muted { color: #888; }
+    /* Inline SVG icon set (sprite via <symbol> + <use>, currentColor). */
+    .icon { width: 1.1em; height: 1.1em; vertical-align: -0.15em; fill: none;
+            stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+            flex: none; }
+    .icon-btn { display: inline-flex; align-items: center; gap: .25rem;
+                text-decoration: none; }
+    .icon-live { fill: currentColor; stroke: none; color: #2a2;
+                 animation: live-pulse 1.4s ease-in-out infinite; }
+    @keyframes live-pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.35); opacity: .55; }
+    }
+    .app-header { display: flex; align-items: center; gap: .5rem; margin: 0 0 1rem; }
+    .app-header h1 { font-size: 1.4rem; margin: 0; }
+    .app-logo { width: 1.9rem; height: 1.9rem; color: #b5651d; }
   </style>
 </head>
 <body>
+  <header class="app-header">
+    <svg class="icon app-logo"><use href="#icon-radio"/></svg>
+    <h1>radiotimer</h1>
+  </header>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <symbol id="icon-radio" viewBox="0 0 24 24">
+      <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/>
+      <path d="m12 12 9 9"/>
+      <path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"/>
+      <path d="M5.7 5.7 19.1 19.1"/>
+      <circle cx="12" cy="12" r="3"/>
+    </symbol>
+    <symbol id="icon-live" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="5.5"/>
+    </symbol>
+    <symbol id="icon-trash" viewBox="0 0 24 24">
+      <path d="M3 6h18"/>
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+      <path d="M10 11v6"/>
+      <path d="M14 11v6"/>
+    </symbol>
+    <symbol id="icon-edit" viewBox="0 0 24 24">
+      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+      <path d="M15 5l4 4"/>
+    </symbol>
+    <symbol id="icon-player" viewBox="0 0 24 24">
+      <path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>
+      <path fill="currentColor" stroke="none" d="M10 9.5l4 2.5-4 2.5z"/>
+    </symbol>
+  </svg>
   <div class="layout">
     <div class="col-left">
       <details class="section" open>
@@ -102,6 +146,13 @@
 
   <script>
     const $ = (id) => document.getElementById(id);
+
+    function icon(name) {
+      return `<svg class="icon" aria-hidden="true"><use href="#icon-${name}"/></svg>`;
+    }
+    function liveIcon() {
+      return `<svg class="icon icon-live" aria-hidden="true"><use href="#icon-live"/></svg>`;
+    }
 
     // Normalize a free-form time entry to "HH:MM". Accepts "16", "16:00",
     // "1600", "8:5", etc. Returns null for anything that is not a valid time.
@@ -231,9 +282,9 @@
       for (const s of rows) {
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td><a href="javascript:void(0)" class="url-link" data-edit="${s.id}">${s.name}</a></td>
-          <td><a href="/api/stations/${s.id}/open" class="url-link" onclick="window.open(this.href,'player','width=600,height=200');return false;">${s.url}</a></td>
-          <td><a href="javascript:void(0)" class="del-link" data-del="${s.id}">[X]</a></td>`;
+          <td><a href="javascript:void(0)" class="url-link icon-btn" data-edit="${s.id}" title="Bearbeiten">${icon('edit')} ${s.name}</a></td>
+          <td><a href="/api/stations/${s.id}/open" class="url-link icon-btn" onclick="window.open(this.href,'player','width=600,height=200');return false;" title="Stream öffnen">${icon('player')} ${s.url}</a></td>
+          <td><a href="javascript:void(0)" class="del-link icon-btn" data-del="${s.id}" title="Löschen">${icon('trash')}</a></td>`;
         tb.appendChild(tr);
         const opt = document.createElement("option");
         opt.value = s.id; opt.textContent = s.name;
@@ -293,21 +344,16 @@
         const tr = document.createElement("tr");
         const statusCell = running.has(r.id)
           ? (liveUrls.has(r.id)
-              ? `<a href="${liveUrls.get(r.id)}" class="url-link running" onclick="window.open(this.href,'player','width=600,height=200');return false;">läuft</a>`
-              : `<span class="running">läuft</span>`)
-          : (r.enabled ? "geplant" : "pausiert");
+              ? `<a href="${liveUrls.get(r.id)}" class="url-link icon-btn" onclick="window.open(this.href,'player','width=600,height=200');return false;">${icon('player')} läuft</a>`
+              : `läuft`)
+          : `<a href="javascript:void(0)" class="url-link icon-btn" data-toggle="${r.id}">${r.enabled ? "geplant" : "pausiert"}</a>`;
         tr.innerHTML = `
-          <td><a href="javascript:void(0)" class="url-link" data-edit="${r.id}">${r.title}</a></td>
+          <td><a href="javascript:void(0)" class="url-link icon-btn" data-edit="${r.id}">${icon('edit')} ${r.title}</a></td>
           <td>${r.station_name}</td>
           <td>${r.start_time}–${r.end_time}</td>
           <td>${formatFrequency(r.frequency)}</td>
           <td>${statusCell}</td>
-          <td>
-            <a href="javascript:void(0)" class="url-link" data-toggle="${r.id}">${r.enabled ? "Pausieren" : "Aktivieren"}</a>
-            ${running.has(r.id)
-              ? '<span class="dot" title="läuft – zuerst pausieren, um zu löschen"></span>&nbsp;'
-              : `<a href="javascript:void(0)" class="del-link" data-del="${r.id}">[X]</a>`}
-          </td>`;
+          <td>${running.has(r.id) ? liveIcon() : `<a href="javascript:void(0)" class="del-link icon-btn" data-del="${r.id}" title="Löschen">${icon('trash')}</a>`}</td>`;
         tb.appendChild(tr);
       }
       tb.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => editSchedule(b.dataset.edit));
@@ -412,9 +458,10 @@
         row.className = "file-row";
         const size = node.size ? (node.size / 1024 / 1024).toFixed(2) + " MB" : "";
         row.innerHTML = `
-          <a href="${node.url}" onclick="window.open(this.href,'player','width=600,height=200');return false;">${node.name}</a>
+          <a href="${node.url}" class="url-link icon-btn" onclick="window.open(this.href,'player','width=600,height=200');return false;">${icon('player')} ${node.name}</a>
           <span class="muted">(${size})</span>
-          ${node.live ? '<span class="dot"></span>' : '<a href="javascript:void(0)" class="del-link" data-del="${node.path}">[X]</a>'}`;
+          ${node.live ? liveIcon() : `<a href="javascript:void(0)" class="del-link icon-btn" data-del="${node.path}" title="Löschen">${icon('trash')}</a>`}
+          `;
         return row;
       }
       const parts = [...pathParts, node.name];
@@ -479,7 +526,7 @@
         return;
       }
       // Disabling a schedule also stops a recording that is currently in
-      // progress (handled server-side), so "pausiert" really means no
+      // progress (handled server-side), so "deaktiviert" really means no
       // recording happens. Re-enabling a schedule that is within its window
       // starts recording again automatically.
       loadSchedules();
