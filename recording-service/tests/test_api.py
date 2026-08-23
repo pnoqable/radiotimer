@@ -113,6 +113,47 @@ def test_start_endpoint(tmp_path, monkeypatch):
         assert res3.json() == {"started": False, "reason": "already running"}
 
 
+def test_toggle_schedule_disables_and_enables(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")
+    import main as m
+
+    db.init_db()
+    station = db.create_station({"name": "BR", "url": "http://x/y.m3u"})
+    sched = db.create_schedule(
+        {
+            "title": "S",
+            "station_id": station["id"],
+            "start_time": "12:00",
+            "end_time": "12:01",
+            "frequency": "*",
+        }
+    )
+
+    sched_mock = mock.MagicMock()
+    monkeypatch.setattr(m.scheduler_service, "scheduler", sched_mock)
+
+    with TestClient(m.app) as client:
+        # startup loaded the enabled schedule into the scheduler
+        assert sched_mock.add_job.call_count >= 1
+
+        # disable it -> the job must be removed and not re-added
+        payload = db.get_schedule(sched["id"])
+        payload["enabled"] = False
+        res = client.put(f"/api/schedules/{sched['id']}", json=payload)
+        assert res.status_code == 200
+        assert res.json()["enabled"] is False
+        sched_mock.remove_job.assert_called_with(sched["id"])
+        add_after_disable = sched_mock.add_job.call_count
+
+        # re-enable it -> the job is added back
+        payload["enabled"] = True
+        res2 = client.put(f"/api/schedules/{sched['id']}", json=payload)
+        assert res2.status_code == 200
+        assert res2.json()["enabled"] is True
+        assert sched_mock.add_job.call_count == add_after_disable + 1
+
+
 def test_open_station_redirects_to_stream(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
     monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")

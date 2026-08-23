@@ -73,6 +73,7 @@
             <label><input type="checkbox" class="day" value="sat" />Samstag</label>
             <label><input type="checkbox" class="day" value="sun" />Sonntag</label>
           </fieldset>
+          <label style="flex-direction: row; align-items: center; gap: .4rem;"><input type="checkbox" id="enabled" checked />Aktiv</label>
           <button type="submit" id="submit-btn">Speichern</button>
           <button type="button" id="reset-btn">Abbrechen</button>
         </form>
@@ -288,6 +289,7 @@
           <td>${running.has(r.id) ? '<span class="running">● läuft</span>' : (r.enabled ? "geplant" : "pausiert")}</td>
           <td style="text-align:right">
             ${running.has(r.id) ? `<a href="javascript:void(0)" class="url-link" data-stop="${r.id}">Stopp</a>` : (due.has(r.id) ? `<a href="javascript:void(0)" class="url-link" data-start="${r.id}">Starten</a>` : "")}
+            <a href="javascript:void(0)" class="url-link" data-toggle="${r.id}">${r.enabled ? "Pausieren" : "Aktivieren"}</a>
             <a href="javascript:void(0)" class="del-link" data-del="${r.id}">[X]</a>
           </td>`;
         tb.appendChild(tr);
@@ -296,6 +298,7 @@
       tb.querySelectorAll("[data-del]").forEach(b => b.onclick = () => delSchedule(b.dataset.del));
       tb.querySelectorAll("[data-stop]").forEach(b => b.onclick = () => stopSchedule(b.dataset.stop));
       tb.querySelectorAll("[data-start]").forEach(b => b.onclick = () => startSchedule(b.dataset.start));
+      tb.querySelectorAll("[data-toggle]").forEach(b => b.onclick = () => toggleSchedule(b.dataset.toggle));
     }
 
     let _expandedFolders = new Set();
@@ -427,6 +430,7 @@
       $("start_time").value = r.start_time;
       $("end_time").value = r.end_time;
       setFrequency(r.frequency);
+      $("enabled").checked = r.enabled;
       $("start_time").classList.remove("invalid");
       $("end_time").classList.remove("invalid");
       $("submit-btn").textContent = "Aktualisieren";
@@ -438,6 +442,7 @@
       $("start_time").classList.remove("invalid");
       $("end_time").classList.remove("invalid");
       setFrequency("*");
+      $("enabled").checked = true;
       $("submit-btn").textContent = "Speichern";
     }
 
@@ -459,6 +464,28 @@
         const err = await res.json().catch(() => ({}));
         alert("Konnte Aufnahme nicht starten: " + (err.detail || res.status));
         return;
+      }
+      loadSchedules();
+    }
+
+    async function toggleSchedule(id) {
+      const cur = await (await fetch("/api/schedules/" + id)).json();
+      const willEnable = !cur.enabled;
+      cur.enabled = willEnable;
+      const res = await fetch("/api/schedules/" + id, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cur),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert("Konnte Status nicht ändern: " + (err.detail || res.status));
+        return;
+      }
+      // When deactivating, also stop a recording that is currently in progress
+      // so "paused" really means no recording happens.
+      if (!willEnable) {
+        await fetch("/api/recordings/" + id + "/stop", { method: "POST" });
       }
       loadSchedules();
     }
@@ -490,6 +517,7 @@
         end_time: endNorm,
         frequency: freq,
         audio_format: "mp3",
+        enabled: $("enabled").checked,
       };
       if (id) {
         await fetch("/api/schedules/" + id, { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
