@@ -34,6 +34,7 @@ class RecordingTask:
     audio_format: str
     stream_url: ValidUrl
     pattern: str = settings.PATTERN
+    actual_start: Optional[DateTime] = None
     id: uuid.UUID = field(default_factory=lambda: uuid.uuid4())
 
     def __post_init__(self):
@@ -42,7 +43,11 @@ class RecordingTask:
 
     # Build the output path from the global pattern.
     def _make_file_path(self) -> Path:
-        start = self.recording_period.start
+        # The timestamp reflects when the recording actually starts (set by the
+        # scheduler), not the schedule's defined start time. The defined start
+        # is only used as a fallback when no actual start is known (e.g. when a
+        # task is built directly in tests).
+        start = self.actual_start if self.actual_start is not None else self.recording_period.start
         end = self.recording_period.end
         rel = self.pattern.format(
             station=_safe_name(self.station),
@@ -55,19 +60,7 @@ class RecordingTask:
             ext=self.audio_format,
             id=str(self.id),
         )
-        path = self.base_dir / rel
-        # Avoid overwriting an existing recording (e.g. on a reconnect or a
-        # server restart): append a sequential number before the extension,
-        # starting at 2 (the original file is "1").
-        if path.exists():
-            i = 2
-            while True:
-                candidate = path.with_name(f"{path.stem} {i}{path.suffix}")
-                if not candidate.exists():
-                    break
-                i += 1
-            path = candidate
-        return path
+        return self.base_dir / rel
 
 
 def _safe_name(name: str) -> str:
@@ -143,6 +136,7 @@ class RecordingSchedule:
             base_dir=self.output_dir,
             audio_format=self.audio_format,
             stream_url=ValidUrl(resolved),
+            actual_start=recording_start_time,
         )
 
     def resolve_recording_period(self, recording_start_time: DateTime) -> TimePeriod:

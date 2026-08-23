@@ -80,7 +80,10 @@ def test_recording_task_path_uses_pattern(monkeypatch, tmp_path):
     assert task.file_path == tmp_path / "BR Klassik" / "Testsendung" / "2026-01-02 18-00.mp3"
 
 
-def test_recording_task_avoids_overwrite(tmp_path, monkeypatch):
+def test_recording_task_does_not_renumber_when_file_exists(tmp_path, monkeypatch):
+    # The timestamp reflects the actual recording start, not the schedule's
+    # defined start. No sequential counter is appended when the file already
+    # exists (ffmpeg's -y overwrites instead).
     monkeypatch.setattr(settings, "PATTERN", "{station}/{title}/{date} {start_hm}.{ext}")
 
     start = pendulum.datetime(2026, 1, 2, 18, 0, 0, tz="UTC")
@@ -101,21 +104,31 @@ def test_recording_task_avoids_overwrite(tmp_path, monkeypatch):
         stream_url=ValidUrl("http://example.com/stream.mp3"),
     )
     assert task.file_path == (
-        tmp_path / "BR Klassik" / "Testsendung" / "2026-01-02 18-00 2.mp3"
+        tmp_path / "BR Klassik" / "Testsendung" / "2026-01-02 18-00.mp3"
     )
 
-    # A second collision bumps the number again (3).
-    task.file_path.write_text("x")
-    task2 = RecordingTask(
+
+def test_recording_task_path_uses_actual_start(tmp_path, monkeypatch):
+    # When an actual start time is supplied (the real recording start), the
+    # filename timestamp uses it instead of the schedule's defined start.
+    monkeypatch.setattr(settings, "PATTERN", "{station}/{title}/{date} {start_hm}.{ext}")
+
+    defined = pendulum.datetime(2026, 1, 2, 18, 0, 0, tz="UTC")
+    end = pendulum.datetime(2026, 1, 2, 19, 0, 0, tz="UTC")
+    period = utils.TimePeriod(defined, end)
+    actual = pendulum.datetime(2026, 1, 2, 20, 3, 17, tz="UTC")
+
+    task = RecordingTask(
         title="Testsendung",
         station="BR Klassik",
         recording_period=period,
         base_dir=tmp_path,
         audio_format="mp3",
         stream_url=ValidUrl("http://example.com/stream.mp3"),
+        actual_start=actual,
     )
-    assert task2.file_path == (
-        tmp_path / "BR Klassik" / "Testsendung" / "2026-01-02 18-00 3.mp3"
+    assert task.file_path == (
+        tmp_path / "BR Klassik" / "Testsendung" / "2026-01-02 20-03.mp3"
     )
 
 
