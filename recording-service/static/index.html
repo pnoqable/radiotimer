@@ -19,8 +19,6 @@
     .days label { flex-direction: row; font-size: .8rem; gap: .25rem; }
     button { padding: .4rem .8rem; cursor: pointer; }
     .running { color: #2a2; font-weight: bold; }
-    .row-actions button { margin-right: .3rem; }
-    .row-actions a { margin-right: .4rem; }
     .card { border: 1px solid #8884; border-radius: 8px; padding: 1rem; margin: 0; }
     .col-left > .card:not(:first-child) { margin-top: 1rem; }
     .layout { display: grid; grid-template-columns: 1fr; gap: 1rem; margin-top: 1rem; }
@@ -43,7 +41,7 @@
   <div class="layout">
     <div class="col-left">
       <div class="card">
-        <h2>Sender</h2>
+        <h1>Sender</h1>
         <form id="station-form">
           <input type="hidden" id="station-id" />
           <label>Name<input id="station-name" required /></label>
@@ -58,7 +56,7 @@
       </div>
 
       <div class="card">
-        <h2>Sendung</h2>
+        <h1>Sendung</h2>
         <form id="schedule-form">
           <input type="hidden" id="id" />
           <label>Titel<input id="title" required /></label>
@@ -222,12 +220,9 @@
       for (const s of rows) {
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td>${s.name}</td>
+          <td><a href="javascript:void(0)" class="url-link" data-edit="${s.id}">${s.name}</a></td>
           <td><a href="/api/stations/${s.id}/open" class="url-link" onclick="window.open(this.href,'player','width=600,height=200');return false;">${s.url}</a></td>
-          <td class="row-actions">
-            <a href="javascript:void(0)" class="url-link" data-edit="${s.id}">Bearbeiten</a>
-            <a href="javascript:void(0)" class="del-link" data-del="${s.id}">Löschen</a>
-          </td>`;
+          <td><a href="javascript:void(0)" class="del-link" data-del="${s.id}">[X]</a></td>`;
         tb.appendChild(tr);
         const opt = document.createElement("option");
         opt.value = s.id; opt.textContent = s.name;
@@ -286,15 +281,14 @@
       for (const r of rows) {
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td>${r.title}</td>
+          <td><a href="javascript:void(0)" class="url-link" data-edit="${r.id}">${r.title}</a></td>
           <td>${r.station_name}</td>
           <td>${r.start_time}–${r.end_time}</td>
           <td>${formatFrequency(r.frequency)}</td>
           <td>${running.has(r.id) ? '<span class="running">● läuft</span>' : (r.enabled ? "geplant" : "pausiert")}</td>
-          <td class="row-actions">
-            <a href="javascript:void(0)" class="url-link" data-edit="${r.id}">Bearbeiten</a>
-            <a href="javascript:void(0)" class="del-link" data-del="${r.id}">Löschen</a>
-            ${running.has(r.id) ? `<button data-stop="${r.id}">Stop</button>` : (due.has(r.id) ? `<button data-start="${r.id}">Starten</button>` : "")}
+          <td style="text-align:right">
+            ${running.has(r.id) ? `<a href="javascript:void(0)" class="url-link" data-stop="${r.id}">Stopp</a>` : (due.has(r.id) ? `<a href="javascript:void(0)" class="url-link" data-start="${r.id}">Starten</a>` : "")}
+            <a href="javascript:void(0)" class="del-link" data-del="${r.id}">[X]</a>
           </td>`;
         tb.appendChild(tr);
       }
