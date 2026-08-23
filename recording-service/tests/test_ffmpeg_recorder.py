@@ -93,6 +93,11 @@ async def test_record_command_includes_user_agent(monkeypatch):
     assert "-user_agent" in captured["cmd"]
     assert any("Mozilla" in str(a) for a in captured["cmd"])
     assert "-flush_packets" in captured["cmd"]
+    # Demuxer flags that help avoid a leading glitch (corrupt/partial leading
+    # frames) without re-encoding. They do not fully fix the MP3 first-frame
+    # bit-reservoir click, which would require a copy-only re-mux or re-encode.
+    assert "+discardcorrupt" in captured["cmd"]
+    assert "ignore_err" in captured["cmd"]
 
 
 async def test_record_stop_event_terminates_early(stub_ffmpeg, tmp_path):

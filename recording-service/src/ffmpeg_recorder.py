@@ -45,6 +45,16 @@ async def record(
         # recording fails with 403). Send a browser-like UA.
         "-user_agent",
         "Mozilla/5.0 (radiotimer)",
+        # Drop incomplete/corrupt leading packets (e.g. a partial audio frame
+        # received when the TCP connection to the live stream opens mid-frame).
+        # Without this, every recording starts with a short "click": the very
+        # first, truncated frame is written to the file and the decoder glitches
+        # on it. This runs purely in the demuxer and does NOT re-encode, so it
+        # adds no CPU load (important for low-power hosts like a Raspberry Pi).
+        "-fflags",
+        "+discardcorrupt",
+        "-err_detect",
+        "ignore_err",
         "-i",
         str(url),
         "-t",
