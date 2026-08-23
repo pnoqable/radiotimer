@@ -37,10 +37,11 @@
     details.section > summary.section-title::-webkit-details-marker { display: none; }
     /* Green dot indicating a recording that is currently running. */
     .dot { display: inline-block; width: .6rem; height: .6rem; border-radius: 50%;
-           background: #2a2; vertical-align: middle; margin-right: .3rem; }
+           background: #2a2; vertical-align: middle; }
     .file-row { display: flex; gap: .5rem; align-items: center; padding: .15rem 0 0 1.5rem; }
     .del-link { color: #c33; text-decoration: none; cursor: pointer; }
     .url-link { color: inherit; text-decoration: underline; cursor: pointer; }
+    .url-link.running { color: #2a2; }
     .del-link:hover { text-decoration: underline; }
     .muted { color: #888; }
   </style>
@@ -292,8 +293,8 @@
         const tr = document.createElement("tr");
         const statusCell = running.has(r.id)
           ? (liveUrls.has(r.id)
-              ? `<a href="${liveUrls.get(r.id)}" class="url-link running" onclick="window.open(this.href,'player','width=600,height=200');return false;"><span class="dot"></span>läuft</a>`
-              : `<span class="running"><span class="dot"></span>läuft</span>`)
+              ? `<a href="${liveUrls.get(r.id)}" class="url-link running" onclick="window.open(this.href,'player','width=600,height=200');return false;">läuft</a>`
+              : `<span class="running">läuft</span>`)
           : (r.enabled ? "geplant" : "pausiert");
         tr.innerHTML = `
           <td><a href="javascript:void(0)" class="url-link" data-edit="${r.id}">${r.title}</a></td>
@@ -301,9 +302,11 @@
           <td>${r.start_time}–${r.end_time}</td>
           <td>${formatFrequency(r.frequency)}</td>
           <td>${statusCell}</td>
-          <td style="text-align:right">
+          <td>
             <a href="javascript:void(0)" class="url-link" data-toggle="${r.id}">${r.enabled ? "Pausieren" : "Aktivieren"}</a>
-            <a href="javascript:void(0)" class="del-link" data-del="${r.id}">[X]</a>
+            ${running.has(r.id)
+              ? '<span class="dot" title="läuft – zuerst pausieren, um zu löschen"></span>&nbsp;'
+              : `<a href="javascript:void(0)" class="del-link" data-del="${r.id}">[X]</a>`}
           </td>`;
         tb.appendChild(tr);
       }
@@ -409,10 +412,9 @@
         row.className = "file-row";
         const size = node.size ? (node.size / 1024 / 1024).toFixed(2) + " MB" : "";
         row.innerHTML = `
-          ${node.live ? '<span class="dot"></span>' : ''}
           <a href="${node.url}" onclick="window.open(this.href,'player','width=600,height=200');return false;">${node.name}</a>
           <span class="muted">(${size})</span>
-          <a href="javascript:void(0)" class="del-link" data-del="${node.path}">[X]</a>`;
+          ${node.live ? '<span class="dot"></span>' : '<a href="javascript:void(0)" class="del-link" data-del="${node.path}">[X]</a>'}`;
         return row;
       }
       const parts = [...pathParts, node.name];
