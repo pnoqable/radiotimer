@@ -22,14 +22,22 @@
     .card { border: 1px solid #8884; border-radius: 8px; padding: 1rem; margin: 0; }
     .col-left > .card:not(:first-child) { margin-top: 1rem; }
     .layout { display: grid; grid-template-columns: 1fr; gap: 1rem; margin-top: 1rem; }
-    @media (min-width: 1200px) {
+    @media (min-width: 1280px) {
       .layout { grid-template-columns: 1.6fr 1fr; align-items: start; }
-    }
-    @media (max-width: 800px) {
-      form { grid-template-columns: 1fr; }
     }
     details { margin-left: 1rem; }
     summary { cursor: pointer; font-weight: 600; }
+    /* Collapsible top-level sections (replaces the bulky h1/h2 headers). */
+    details.section { margin-left: 0; border: 1px solid #8884; border-radius: 8px; padding: 1rem; }
+    .col-left > .section:not(:first-child) { margin-top: 1rem; }
+    details.section > summary.section-title {
+      font-size: 1.3rem; font-weight: 600; cursor: pointer;
+      margin: 0 0 .5rem; list-style: none;
+    }
+    details.section > summary.section-title::-webkit-details-marker { display: none; }
+    /* Green dot indicating a recording that is currently running. */
+    .dot { display: inline-block; width: .6rem; height: .6rem; border-radius: 50%;
+           background: #2a2; vertical-align: middle; margin-right: .3rem; }
     .file-row { display: flex; gap: .5rem; align-items: center; padding: .15rem 0 0 1.5rem; }
     .del-link { color: #c33; text-decoration: none; cursor: pointer; }
     .url-link { color: inherit; text-decoration: underline; cursor: pointer; }
@@ -40,23 +48,23 @@
 <body>
   <div class="layout">
     <div class="col-left">
-      <div class="card">
-        <h1>Sender</h1>
+      <details class="section" open>
+        <summary class="section-title">Sender</summary>
         <form id="station-form">
           <input type="hidden" id="station-id" />
           <label>Name<input id="station-name" required /></label>
           <label>Stream/Playlist-URL<input id="station-url" required placeholder="https://.../stream.m3u" /></label>
-          <button type="submit" id="station-submit">Sender speichern</button>
+          <button type="submit" id="station-submit">Sender neu anlegen</button>
           <button type="button" id="station-reset">Abbrechen</button>
         </form>
         <table id="stations">
           <thead><tr><th>Name</th><th>URL</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
-      </div>
+      </details>
 
-      <div class="card">
-        <h1>Sendung</h2>
+      <details class="section" open>
+        <summary class="section-title">Sendungen</summary>
         <form id="schedule-form">
           <input type="hidden" id="id" />
           <label>Titel<input id="title" required /></label>
@@ -73,19 +81,21 @@
             <label><input type="checkbox" class="day" value="sat" />Samstag</label>
             <label><input type="checkbox" class="day" value="sun" />Sonntag</label>
           </fieldset>
-          <button type="submit" id="submit-btn">Speichern</button>
+          <button type="submit" id="submit-btn">Sendung neu anlegen</button>
           <button type="button" id="reset-btn">Abbrechen</button>
         </form>
       <table id="schedules">
         <thead><tr><th>Titel</th><th>Sender</th><th>Zeit</th><th>Wochentage</th><th>Status</th><th></th></tr></thead>
         <tbody></tbody>
       </table>
-      </div>
+      </details>
     </div>
 
     <div class="col-right">
-      <h2>Aufnahmen</h2>
-      <div id="recordings"></div>
+      <details class="section" open>
+        <summary class="section-title">Aufnahmen</summary>
+        <div id="recordings"></div>
+      </details>
     </div>
   </div>
 
@@ -237,13 +247,13 @@
       $("station-id").value = s.id;
       $("station-name").value = s.name;
       $("station-url").value = s.url;
-      $("station-submit").textContent = "Aktualisieren";
+      $("station-submit").textContent = "Änderungen speichern";
     }
 
     function resetStationForm() {
       $("station-form").reset();
       $("station-id").value = "";
-      $("station-submit").textContent = "Sender speichern";
+      $("station-submit").textContent = "Sender neu anlegen";
     }
 
     async function delStation(id) {
@@ -275,16 +285,22 @@
       const rows = await (await fetch("/api/schedules")).json();
       const status = await (await fetch("/api/status")).json();
       const running = new Set(status.jobs.filter(j => j.running).map(j => j.id));
+      const liveUrls = new Map(status.jobs.filter(j => j.live_url).map(j => [j.id, j.live_url]));
       const tb = $("schedules").querySelector("tbody");
       tb.innerHTML = "";
       for (const r of rows) {
         const tr = document.createElement("tr");
+        const statusCell = running.has(r.id)
+          ? (liveUrls.has(r.id)
+              ? `<a href="${liveUrls.get(r.id)}" class="url-link running" onclick="window.open(this.href,'player','width=600,height=200');return false;"><span class="dot"></span>läuft</a>`
+              : `<span class="running"><span class="dot"></span>läuft</span>`)
+          : (r.enabled ? "geplant" : "pausiert");
         tr.innerHTML = `
           <td><a href="javascript:void(0)" class="url-link" data-edit="${r.id}">${r.title}</a></td>
           <td>${r.station_name}</td>
           <td>${r.start_time}–${r.end_time}</td>
           <td>${formatFrequency(r.frequency)}</td>
-          <td>${running.has(r.id) ? '<span class="running">● läuft</span>' : (r.enabled ? "geplant" : "pausiert")}</td>
+          <td>${statusCell}</td>
           <td style="text-align:right">
             <a href="javascript:void(0)" class="url-link" data-toggle="${r.id}">${r.enabled ? "Pausieren" : "Aktivieren"}</a>
             <a href="javascript:void(0)" class="del-link" data-del="${r.id}">[X]</a>
@@ -427,7 +443,7 @@
       setFrequency(r.frequency);
       $("start_time").classList.remove("invalid");
       $("end_time").classList.remove("invalid");
-      $("submit-btn").textContent = "Aktualisieren";
+      $("submit-btn").textContent = "Änderungen speichern";
     }
 
     function resetScheduleForm() {
@@ -436,7 +452,7 @@
       $("start_time").classList.remove("invalid");
       $("end_time").classList.remove("invalid");
       setFrequency("*");
-      $("submit-btn").textContent = "Speichern";
+      $("submit-btn").textContent = "Sendung neu anlegen";
     }
 
     async function delSchedule(id) {

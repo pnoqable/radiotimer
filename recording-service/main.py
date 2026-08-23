@@ -26,7 +26,7 @@ from src.db import (
     update_schedule,
     update_station,
 )
-from src.ffmpeg_recorder import is_active, is_live_path, iter_live_file, stop
+from src.ffmpeg_recorder import is_active, is_live_path, iter_live_file, get_live_path, stop
 from src.playlist import resolve_stream_url
 from src.recording_service import RecordAudioService
 from src.schedule_builder import build_schedule
@@ -239,6 +239,15 @@ def api_status() -> dict[str, Any]:
                 due = period.start <= now <= period.end
             except Exception:
                 due = False
+        live_url = None
+        if is_active(job.id):
+            lp = get_live_path(job.id)
+            if lp is not None:
+                try:
+                    rel = lp.resolve().relative_to(settings.OUTPUT_DIR.resolve()).as_posix()
+                    live_url = f"/api/recordings/live?path={urllib.parse.quote(rel)}"
+                except Exception:
+                    live_url = None
         jobs.append(
             {
                 "id": job.id,
@@ -246,6 +255,7 @@ def api_status() -> dict[str, Any]:
                 "next_run": str(job.next_run_time),
                 "running": is_active(job.id),
                 "due": due,
+                "live_url": live_url,
             }
         )
     return {"jobs": jobs}

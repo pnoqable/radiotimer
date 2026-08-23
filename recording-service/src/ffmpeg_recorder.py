@@ -121,6 +121,11 @@ def is_live_path(path: Path) -> bool:
     return any(Path(p).resolve() == target for p in _paths.values())
 
 
+def get_live_path(run_id: str) -> Optional[Path]:
+    """Return the file path currently being written for ``run_id``, if any."""
+    return _paths.get(run_id)
+
+
 async def iter_live_file(path: Path, chunk_size: int = 64 * 1024):
     """Stream a (possibly still growing) recording file to the client.
 
