@@ -90,6 +90,16 @@
       <path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>
       <path fill="currentColor" stroke="none" d="M10 9.5l4 2.5-4 2.5z"/>
     </symbol>
+    <symbol id="icon-calendar" viewBox="0 0 24 24">
+      <path d="M8 2v4"/>
+      <path d="M16 2v4"/>
+      <rect x="3" y="4" width="18" height="18" rx="2"/>
+      <path d="M3 10h18"/>
+    </symbol>
+    <symbol id="icon-pause" viewBox="0 0 24 24">
+      <rect x="6" y="5" width="4" height="14" rx="1"/>
+      <rect x="14" y="5" width="4" height="14" rx="1"/>
+    </symbol>
   </svg>
   <div class="layout">
     <div class="col-left">
@@ -346,7 +356,7 @@
           ? (liveUrls.has(r.id)
               ? `<a href="${liveUrls.get(r.id)}" class="url-link icon-btn" onclick="window.open(this.href,'player','width=600,height=200');return false;">${icon('player')} läuft</a>`
               : `läuft`)
-          : `<a href="javascript:void(0)" class="url-link icon-btn" data-toggle="${r.id}">${r.enabled ? "geplant" : "pausiert"}</a>`;
+          : `<a href="javascript:void(0)" class="url-link icon-btn" data-toggle="${r.id}">${r.enabled ? icon('calendar') + ' geplant' : icon('pause') + ' pausiert'}</a>`;
         tr.innerHTML = `
           <td><a href="javascript:void(0)" class="url-link icon-btn" data-edit="${r.id}">${icon('edit')} ${r.title}</a></td>
           <td>${r.station_name}</td>
