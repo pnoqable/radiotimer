@@ -134,3 +134,47 @@ def test_open_station_redirects_to_stream(tmp_path, monkeypatch):
 
         # unknown station -> 404
         assert client.get("/api/stations/nope/open", follow_redirects=False).status_code == 404
+
+
+def test_update_without_enabled_keeps_state(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")
+    import main as m
+
+    db.init_db()
+    station = db.create_station({"name": "BR", "url": "http://x/y.m3u"})
+    sched = db.create_schedule(
+        {
+            "title": "S",
+            "station_id": station["id"],
+            "start_time": "12:00",
+            "end_time": "12:01",
+            "frequency": "*",
+        }
+    )
+
+    sched_mock = mock.MagicMock()
+    monkeypatch.setattr(m.scheduler_service, "scheduler", sched_mock)
+
+    with TestClient(m.app) as client:
+        # Pause it via the toggle (full payload includes enabled).
+        cur = db.get_schedule(sched["id"])
+        cur["enabled"] = False
+        res_pause = client.put(f"/api/schedules/{sched['id']}", json=cur)
+        assert res_pause.status_code == 200
+        assert res_pause.json()["enabled"] is False
+
+        # Edit the title only (no enabled field) -> must stay paused.
+        res = client.put(
+            f"/api/schedules/{sched['id']}",
+            json={
+                "title": "S2",
+                "station_id": station["id"],
+                "start_time": "12:00",
+                "end_time": "12:01",
+            },
+        )
+        assert res.status_code == 200
+        assert res.json()["enabled"] is False
+        assert res.json()["title"] == "S2"
+

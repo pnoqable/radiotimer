@@ -73,7 +73,6 @@
             <label><input type="checkbox" class="day" value="sat" />Samstag</label>
             <label><input type="checkbox" class="day" value="sun" />Sonntag</label>
           </fieldset>
-          <label style="flex-direction: row; align-items: center; gap: .4rem;"><input type="checkbox" id="enabled" checked />Aktiv</label>
           <button type="submit" id="submit-btn">Speichern</button>
           <button type="button" id="reset-btn">Abbrechen</button>
         </form>
@@ -426,7 +425,6 @@
       $("start_time").value = r.start_time;
       $("end_time").value = r.end_time;
       setFrequency(r.frequency);
-      $("enabled").checked = r.enabled;
       $("start_time").classList.remove("invalid");
       $("end_time").classList.remove("invalid");
       $("submit-btn").textContent = "Aktualisieren";
@@ -438,7 +436,6 @@
       $("start_time").classList.remove("invalid");
       $("end_time").classList.remove("invalid");
       setFrequency("*");
-      $("enabled").checked = true;
       $("submit-btn").textContent = "Speichern";
     }
 
@@ -496,7 +493,6 @@
         end_time: endNorm,
         frequency: freq,
         audio_format: "mp3",
-        enabled: $("enabled").checked,
       };
       if (id) {
         await fetch("/api/schedules/" + id, { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
