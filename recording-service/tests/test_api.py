@@ -136,6 +136,64 @@ def test_open_station_redirects_to_stream(tmp_path, monkeypatch):
         assert client.get("/api/stations/nope/open", follow_redirects=False).status_code == 404
 
 
+def test_live_file_follows_growth(tmp_path, monkeypatch):
+    import asyncio
+
+    from src import ffmpeg_recorder as fr
+
+    path = tmp_path / "live.mp3"
+    path.write_bytes(b"AAAA")
+    # Mark the file as currently being recorded.
+    fr._paths["fake"] = path
+    try:
+
+        async def collect():
+            got = b""
+            async for chunk in fr.iter_live_file(path):
+                got += chunk
+                if got == b"AAAA":
+                    # Recording just finished: stop being "live" and append more.
+                    fr._paths.pop("fake", None)
+                    with open(path, "ab") as f:
+                        f.write(b"BBBB")
+            return got
+
+        result = asyncio.run(collect())
+        # The stream must follow the growing file and then stop once the
+        # recording has ended.
+        assert result == b"AAAABBBB"
+    finally:
+        fr._paths.pop("fake", None)
+
+
+def test_recordings_live_serves_static_when_not_recording(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")
+    import main as m
+
+    rec = tmp_path / "S" / "show.mp3"
+    rec.parent.mkdir(parents=True)
+    rec.write_bytes(b"hello")
+    rel = rec.relative_to(tmp_path).as_posix()
+
+    with TestClient(m.app) as client:
+        res = client.get("/api/recordings/live?path=" + urllib.parse.quote(rel))
+        assert res.status_code == 200
+        assert res.content == b"hello"
+
+
+def test_recordings_live_rejects_traversal(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")
+    import main as m
+
+    with TestClient(m.app) as client:
+        res = client.get(
+            "/api/recordings/live?path=" + urllib.parse.quote("../../etc/passwd")
+        )
+        assert res.status_code == 400
+
+
 def test_update_without_enabled_keeps_state(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
     monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")
