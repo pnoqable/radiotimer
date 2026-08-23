@@ -20,13 +20,14 @@
     button { padding: .4rem .8rem; cursor: pointer; }
     .running { color: #2a2; font-weight: bold; }
     .row-actions button { margin-right: .3rem; }
+    .row-actions a { margin-right: .4rem; }
     .card { border: 1px solid #8884; border-radius: 8px; padding: 1rem; margin: 0; }
     .col-left > .card:not(:first-child) { margin-top: 1rem; }
     .layout { display: grid; grid-template-columns: 1fr; gap: 1rem; margin-top: 1rem; }
-    @media (min-width: 1100px) {
+    @media (min-width: 1200px) {
       .layout { grid-template-columns: 1.6fr 1fr; align-items: start; }
     }
-    @media (max-width: 520px) {
+    @media (max-width: 800px) {
       form { grid-template-columns: 1fr; }
     }
     details { margin-left: 1rem; }
@@ -224,8 +225,8 @@
           <td>${s.name}</td>
           <td><a href="/api/stations/${s.id}/open" class="url-link" onclick="window.open(this.href,'player','width=600,height=200');return false;">${s.url}</a></td>
           <td class="row-actions">
-            <button data-edit="${s.id}">Bearbeiten</button>
-            <button data-del="${s.id}">Löschen</button>
+            <a href="javascript:void(0)" class="url-link" data-edit="${s.id}">Bearbeiten</a>
+            <a href="javascript:void(0)" class="del-link" data-del="${s.id}">Löschen</a>
           </td>`;
         tb.appendChild(tr);
         const opt = document.createElement("option");
@@ -291,8 +292,8 @@
           <td>${formatFrequency(r.frequency)}</td>
           <td>${running.has(r.id) ? '<span class="running">● läuft</span>' : (r.enabled ? "geplant" : "pausiert")}</td>
           <td class="row-actions">
-            <button data-edit="${r.id}">Bearbeiten</button>
-            <button data-del="${r.id}">Löschen</button>
+            <a href="javascript:void(0)" class="url-link" data-edit="${r.id}">Bearbeiten</a>
+            <a href="javascript:void(0)" class="del-link" data-del="${r.id}">Löschen</a>
             ${running.has(r.id) ? `<button data-stop="${r.id}">Stop</button>` : (due.has(r.id) ? `<button data-start="${r.id}">Starten</button>` : "")}
           </td>`;
         tb.appendChild(tr);
