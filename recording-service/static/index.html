@@ -276,7 +276,6 @@
       const rows = await (await fetch("/api/schedules")).json();
       const status = await (await fetch("/api/status")).json();
       const running = new Set(status.jobs.filter(j => j.running).map(j => j.id));
-      const due = new Set(status.jobs.filter(j => j.due && !j.running).map(j => j.id));
       const tb = $("schedules").querySelector("tbody");
       tb.innerHTML = "";
       for (const r of rows) {
@@ -288,7 +287,6 @@
           <td>${formatFrequency(r.frequency)}</td>
           <td>${running.has(r.id) ? '<span class="running">● läuft</span>' : (r.enabled ? "geplant" : "pausiert")}</td>
           <td style="text-align:right">
-            ${running.has(r.id) ? `<a href="javascript:void(0)" class="url-link" data-stop="${r.id}">Stopp</a>` : (due.has(r.id) ? `<a href="javascript:void(0)" class="url-link" data-start="${r.id}">Starten</a>` : "")}
             <a href="javascript:void(0)" class="url-link" data-toggle="${r.id}">${r.enabled ? "Pausieren" : "Aktivieren"}</a>
             <a href="javascript:void(0)" class="del-link" data-del="${r.id}">[X]</a>
           </td>`;
@@ -296,8 +294,6 @@
       }
       tb.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => editSchedule(b.dataset.edit));
       tb.querySelectorAll("[data-del]").forEach(b => b.onclick = () => delSchedule(b.dataset.del));
-      tb.querySelectorAll("[data-stop]").forEach(b => b.onclick = () => stopSchedule(b.dataset.stop));
-      tb.querySelectorAll("[data-start]").forEach(b => b.onclick = () => startSchedule(b.dataset.start));
       tb.querySelectorAll("[data-toggle]").forEach(b => b.onclick = () => toggleSchedule(b.dataset.toggle));
     }
 
@@ -452,22 +448,6 @@
       loadSchedules();
     }
 
-    async function stopSchedule(id) {
-      if (!confirm("Aufnahme wirklich stoppen?")) return;
-      await fetch("/api/recordings/" + id + "/stop", { method: "POST" });
-      loadSchedules();
-    }
-
-    async function startSchedule(id) {
-      const res = await fetch("/api/recordings/" + id + "/start", { method: "POST" });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        alert("Konnte Aufnahme nicht starten: " + (err.detail || res.status));
-        return;
-      }
-      loadSchedules();
-    }
-
     async function toggleSchedule(id) {
       const cur = await (await fetch("/api/schedules/" + id)).json();
       const willEnable = !cur.enabled;
@@ -482,11 +462,10 @@
         alert("Konnte Status nicht ändern: " + (err.detail || res.status));
         return;
       }
-      // When deactivating, also stop a recording that is currently in progress
-      // so "paused" really means no recording happens.
-      if (!willEnable) {
-        await fetch("/api/recordings/" + id + "/stop", { method: "POST" });
-      }
+      // Disabling a schedule also stops a recording that is currently in
+      // progress (handled server-side), so "pausiert" really means no
+      // recording happens. Re-enabling a schedule that is within its window
+      // starts recording again automatically.
       loadSchedules();
     }
 
