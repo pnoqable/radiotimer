@@ -266,7 +266,8 @@ def create_schedule(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def update_schedule(schedule_id: str, data: dict[str, Any]) -> Optional[dict[str, Any]]:
-    if not get_schedule(schedule_id):
+    existing = get_schedule(schedule_id)
+    if not existing:
         return None
     if data.get("station_id"):
         station = get_station(data["station_id"])
@@ -288,7 +289,7 @@ def update_schedule(schedule_id: str, data: dict[str, Any]) -> Optional[dict[str
             data["end_time"],
             data.get("frequency", "*"),
             data.get("audio_format", "mp3"),
-            1 if data.get("enabled", True) else 0,
+            1 if data.get("enabled", existing["enabled"]) else 0,
             schedule_id,
         ),
     )
