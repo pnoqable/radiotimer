@@ -8,6 +8,7 @@ from typing import Any, Optional
 
 import validators  # type: ignore
 from croniter import croniter
+import pendulum  # type: ignore
 from pendulum import Date, DateTime, Duration, Period, Time  # type: ignore
 from typing_extensions import override
 
@@ -47,8 +48,12 @@ class RecordingTask:
         # scheduler), not the schedule's defined start time. The defined start
         # is only used as a fallback when no actual start is known (e.g. when a
         # task is built directly in tests).
-        start = self.actual_start if self.actual_start is not None else self.recording_period.start
-        end = self.recording_period.end
+        tz = pendulum.timezone(settings.TIME_ZONE)
+        start = _to_local(
+            self.actual_start if self.actual_start is not None else self.recording_period.start,
+            tz,
+        )
+        end = _to_local(self.recording_period.end, tz)
         rel = self.pattern.format(
             station=_safe_name(self.station),
             title=_safe_name(self.title),
@@ -71,6 +76,18 @@ def _safe_name(name: str) -> str:
     name = re.sub(r"[\x00-\x1f/\\]", "_", name)
     name = name.strip().strip(".")
     return name or "unnamed"
+
+
+def _to_local(dt, tz):
+    """Return ``dt`` converted to ``tz``.
+
+    Internal recording times are UTC (and may be naive datetimes that really
+    represent UTC). Treat naive datetimes as UTC before converting, so the
+    file-name timestamp is shown in the user's local timezone.
+    """
+    if dt.tzinfo is None:
+        return pendulum.instance(dt, tz="UTC").in_tz(tz)
+    return dt.in_tz(tz)
 
 
 @dataclass(frozen=True)
