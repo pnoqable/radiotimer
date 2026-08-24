@@ -12,6 +12,22 @@
 #   4. Run this script as the deploy user (e.g. pi, with sudo rights):
 #        sudo bash /home/pi/radiotimer/deploy/raspberrypi/install.sh
 #
+# Raspberry Pi 1 (ARMv6, 256/512 MB RAM) notes:
+#   * pip will COMPILE pendulum and aiohttp from source (no armv6 wheels),
+#     which needs more RAM than the Pi 1 has. Increase swap first, e.g.:
+#       sudo dphys-swapfile swapoff
+#       sudo sed -i 's/^CONF_SWAPSIZE=.*/CONF_SWAPSIZE=1024/' /etc/dphys-swapfile
+#       sudo dphys-swapfile setup && sudo dphys-swapfile swapon
+#     (reset afterwards with CONF_SWAPSIZE=100 and re-run setup, or reboot).
+#   * Keep RADIOTIMER_REENCODE OFF -- a Pi 1 cannot re-encode in real time.
+#   * The install (especially the compile step) takes a long time on a
+#     single-core Pi 1; be patient.
+#
+# Optional nginx reverse proxy (port 80): set INSTALL_NGINX=1 to also install
+# nginx, drop in the bundled site config (nginx-site.conf), and point podcast
+# enclosure URLs at the public host:
+#   INSTALL_NGINX=1 sudo bash /home/pi/radiotimer/deploy/raspberrypi/install.sh
+#
 # The script installs system packages, creates a venv, installs the
 # Python dependencies and registers a systemd service that auto-starts
 # the recorder on boot.
@@ -84,6 +100,24 @@ sudo cp "$UNIT" "/etc/systemd/system/$SVC_NAME.service"
 rm -f "$UNIT"
 sudo systemctl daemon-reload
 sudo systemctl enable "$SVC_NAME.service"
+
+# Optional: nginx reverse proxy so the UI/API is reachable on port 80 while
+# the service stays on 8000.
+if [ "${INSTALL_NGINX:-0}" = "1" ]; then
+    echo "== Installing nginx reverse proxy =="
+    sudo apt-get install -y nginx
+    sudo cp "$SCRIPT_DIR/nginx-site.conf" /etc/nginx/sites-available/$SVC_NAME
+    sudo ln -sf /etc/nginx/sites-available/$SVC_NAME /etc/nginx/sites-enabled/$SVC_NAME
+    sudo rm -f /etc/nginx/sites-enabled/default
+    sudo nginx -t
+    sudo systemctl enable nginx
+    sudo systemctl restart nginx
+    # Point podcast enclosure URLs at the public host clients use.
+    if ! grep -q '^RADIOTIMER_PUBLIC_URL=' "$SCRIPT_DIR/.env"; then
+        echo "RADIOTIMER_PUBLIC_URL=http://radiotimer.local" >> "$SCRIPT_DIR/.env"
+        sudo systemctl restart "$SVC_NAME.service"
+    fi
+fi
 
 echo
 echo "== Done. Start / check the service with: =="
