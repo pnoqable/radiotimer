@@ -381,7 +381,8 @@ def test_podcast_feed_lists_recordings(tmp_path, monkeypatch):
         # Enclosure points at the static recording endpoint with an absolute URL.
         assert "http://example.com/api/recordings/live?path=" in body
         assert urllib.parse.quote(rel) in body
-        assert "2026-08-10 23-05" in body
+        # Episode title joins the file name with the folder parts in reverse.
+        assert "2026-08-10 23-05 Jazz, BR" in body
 
 
 def test_podcast_feed_rejects_traversal(tmp_path, monkeypatch):
