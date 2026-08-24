@@ -623,13 +623,19 @@
       try {
         const d = JSON.parse(e.data);
         const mb = (d.size / 1024 / 1024).toFixed(2) + " MB";
+        let found = false;
         for (const r of document.querySelectorAll("#recordings [data-path]")) {
           if (r.dataset.path === d.path) {
             const span = r.querySelector(".size");
             if (span) span.textContent = mb;
+            found = true;
             break;
           }
         }
+        // The "state" event fired before ffmpeg had created the file, so the
+        // row isn't in the tree yet. Once the file exists (this tick) a full
+        // refresh shows it; afterwards progress only updates the size.
+        if (!found) loadRecordings();
       } catch (_) {}
     });
   </script>
