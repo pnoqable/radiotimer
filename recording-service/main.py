@@ -159,11 +159,20 @@ def _build_podcast_feed(folder_rel: str, request: Request) -> str:
         if not entry.is_file() or entry.suffix.lower() not in _AUDIO_EXTS:
             continue
         rel = entry.relative_to(base).as_posix()
+        parts = rel.split("/")
+        # Episode title: the file name (e.g. "2026-08-23 18-23") followed by the
+        # path components (station, show, ...) in reverse order, so a file at
+        # "Bayern 2 Süd/Test/2026-08-23 18-23.mp3" becomes
+        # "2026-08-23 18-23 Test Bayern 2 Süd".
+        folder_parts = parts[:-1]
+        title = entry.stem
+        if folder_parts:
+            title = title + " " + ", ".join(reversed(folder_parts))
         media_type = mimetypes.guess_type(str(entry))[0] or "application/octet-stream"
         enc_url = public + "/api/recordings/live?path=" + urllib.parse.quote(rel)
         items.append(
             {
-                "title": entry.stem,
+                "title": title,
                 "enc_url": enc_url,
                 "length": entry.stat().st_size,
                 "type": media_type,
