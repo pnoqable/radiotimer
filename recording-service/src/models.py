@@ -157,15 +157,27 @@ class RecordingSchedule:
         )
 
     def resolve_recording_period(self, recording_start_time: DateTime) -> TimePeriod:
-        # Get prev recording period based on cron expression (as we may be within the prev recording period)
-        prev_start_time: DateTime = croniter(
-            self.cron_expression, start_time=recording_start_time
-        ).get_prev(datetime)
+        # Find the recording window (start, start+duration) that contains the
+        # given time. croniter's get_prev/get_next are exclusive of an exact
+        # match, so at the precise fire time (second 0, as produced by the
+        # cron trigger) they would both skip the current day and return
+        # yesterday and tomorrow. Detect an exact match first, otherwise a
+        # recording that starts right at its scheduled time would resolve to
+        # the next day and wait ~24h before actually recording.
+        duration = self.duration.as_timedelta()
+        cron = croniter(self.cron_expression, start_time=recording_start_time)
+        fire_time = recording_start_time.replace(second=0, microsecond=0)
+        # croniter.match is a classmethod here; it honours the day-of-week too.
+        if croniter.match(self.cron_expression, fire_time):
+            return TimePeriod(start=fire_time, end=fire_time + duration)
 
-        prev_end_time: DateTime = prev_start_time + self.duration.as_timedelta()
+        # Get prev recording period based on cron expression (as we may be within the prev recording period)
+        prev_start_time: DateTime = cron.get_prev(datetime)
+
+        prev_end_time: DateTime = prev_start_time + duration
 
         # Check if we are still within the prev recording period
-        if recording_start_time < prev_end_time:
+        if prev_start_time <= recording_start_time < prev_end_time:
             # If recording has been started before the end of the previous recording period, we are still within the previous recording period
             logger.debug(
                 f"Schedule '{self.title}': Recording has been started during previous recording period"
@@ -176,10 +188,8 @@ class RecordingSchedule:
             )
         else:
             # Get next recording period based on cron expression
-            next_start_time: DateTime = croniter(
-                self.cron_expression, start_time=recording_start_time
-            ).get_next(datetime)
-            next_end_time: DateTime = next_start_time + self.duration.as_timedelta()
+            next_start_time: DateTime = cron.get_next(datetime)
+            next_end_time: DateTime = next_start_time + duration
 
             return TimePeriod(
                 start=next_start_time,

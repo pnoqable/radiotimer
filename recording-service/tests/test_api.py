@@ -24,6 +24,34 @@ def test_signals_subscribe_unsubscribe():
     assert ev not in signals._subscribers
 
 
+def test_resolve_recording_period_exact_boundary_is_today():
+    # At the precise scheduled time (second 0, as the cron trigger fires it)
+    # the window must resolve to *today*, not tomorrow. Otherwise the
+    # recording waits ~24h and never starts on time.
+    from datetime import datetime as _dt
+
+    row = {
+        "id": "11111111-1111-1111-1111-111111111111",
+        "title": "T",
+        "station_name": "S",
+        "station_url": "http://x",
+        "start_time": "14:00",
+        "end_time": "15:00",
+        "frequency": "*",
+    }
+    s = build_schedule(row)
+    fire = pendulum.datetime(2026, 8, 24, 12, 0, 0, tz="UTC")
+    period = s.resolve_recording_period(fire)
+    assert period.start == _dt(2026, 8, 24, 12, 0, 0, tzinfo=pendulum.tz.UTC)
+    # 14:30 (inside the window) and 15:30 (after it) must stay consistent too.
+    assert s.resolve_recording_period(
+        pendulum.datetime(2026, 8, 24, 12, 30, 0, tz="UTC")
+    ).start.day == 24
+    assert s.resolve_recording_period(
+        pendulum.datetime(2026, 8, 24, 13, 30, 0, tz="UTC")
+    ).start.day == 25
+
+
 def test_delete_recording(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
     monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")
