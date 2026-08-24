@@ -7,8 +7,21 @@ from fastapi.testclient import TestClient
 import pendulum
 from pendulum import DateTime, Duration
 
-from src import db, settings, utils
+from src import db, settings, signals, utils
 from src.schedule_builder import build_schedule
+
+
+def test_signals_version_bump():
+    before = signals.version()
+    signals.bump()
+    assert signals.version() == before + 1
+
+
+def test_signals_subscribe_unsubscribe():
+    ev = signals.subscribe()
+    assert ev in signals._subscribers
+    signals.unsubscribe(ev)
+    assert ev not in signals._subscribers
 
 
 def test_delete_recording(tmp_path, monkeypatch):

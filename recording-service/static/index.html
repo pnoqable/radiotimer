@@ -474,10 +474,11 @@
       if (node.type === "file") {
         const row = document.createElement("div");
         row.className = "file-row";
+        row.dataset.path = node.path;
         const size = node.size ? (node.size / 1024 / 1024).toFixed(2) + " MB" : "";
         row.innerHTML = `
           <a href="${node.url}" class="url-link icon-btn" onclick="window.open(this.href,'player','width=600,height=200');return false;">${icon('player')} ${node.name}</a>
-          <span class="muted">(${size})</span>
+          <span class="muted">(<span class="size">${size}</span>)</span>
           ${node.live ? liveIcon() : `<a href="javascript:void(0)" class="del-link icon-btn" data-del="${node.path}" title="Löschen">${icon('trash')}</a>`}
           `;
         return row;
@@ -606,9 +607,31 @@
     loadSchedules();
     loadExpandedState();
     loadRecordings();
-    // Recordings and schedule status refresh every second (live view).
-    setInterval(loadRecordings, 1000);
-    setInterval(loadSchedules, 1000);
+
+    // Live view via Server-Sent Events: the server pushes a "state" event only
+    // when something changes (recording starts/stops, file deleted, schedule
+    // edited), so we refresh without polling the filesystem every second. A
+    // slow fallback poll covers the rare case that the SSE connection drops.
+    const events = new EventSource("/api/events");
+    events.addEventListener("state", () => {
+      loadRecordings();
+      loadSchedules();
+    });
+    events.addEventListener("progress", (e) => {
+      // Delta update: only refresh the size of the one file that is still
+      // being written, without re-walking the whole recordings tree.
+      try {
+        const d = JSON.parse(e.data);
+        const mb = (d.size / 1024 / 1024).toFixed(2) + " MB";
+        for (const r of document.querySelectorAll("#recordings [data-path]")) {
+          if (r.dataset.path === d.path) {
+            const span = r.querySelector(".size");
+            if (span) span.textContent = mb;
+            break;
+          }
+        }
+      } catch (_) {}
+    });
   </script>
 </body>
 </html>
