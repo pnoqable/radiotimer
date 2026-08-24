@@ -1,3 +1,5 @@
+import asyncio
+import json
 import logging
 import mimetypes
 import os
@@ -31,12 +33,21 @@ from src.db import (
     update_schedule,
     update_station,
 )
-from src.ffmpeg_recorder import is_active, is_live_path, iter_live_file, get_live_path, stop
+from src.ffmpeg_recorder import (
+    is_active,
+    is_any_active,
+    active_recordings,
+    is_live_path,
+    iter_live_file,
+    get_live_path,
+    stop,
+)
 from src.playlist import resolve_stream_url
 from src.recording_service import RecordAudioService
 from src.schedule_builder import build_schedule
 from src.scheduler_service import RecordingSchedulerService
 from src import settings
+from src import signals
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +86,7 @@ def reload_job(schedule_id: str) -> None:
         # in-progress run for it. Re-enabling a schedule that is currently
         # within its window will start recording again automatically.
         stop(schedule_id)
+    signals.bump()
 
 
 def load_all_schedules() -> None:
@@ -212,6 +224,25 @@ def _build_podcast_feed(folder_rel: str, request: Request) -> str:
     )
 
 
+async def _live_pump() -> None:
+    # While a recording is in progress, push its current byte size once per
+    # second so the UI shows the growing file second-accurately. This is a tiny
+    # delta (relative path + size only) — no filesystem tree walk and no full
+    # re-render. When nothing is recording this task just sleeps, so idle CPU
+    # stays at zero.
+    out_root = settings.OUTPUT_DIR.resolve()
+    while True:
+        if is_any_active():
+            for _rid, path in active_recordings():
+                try:
+                    size = path.stat().st_size
+                    rel = path.resolve().relative_to(out_root).as_posix()
+                except (OSError, ValueError):
+                    continue
+                signals.push_progress(rel, size)
+        await asyncio.sleep(1)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     utils.setup_logging(logging.INFO)
@@ -219,7 +250,9 @@ async def lifespan(app: FastAPI):
     init_db()
     load_all_schedules()
     scheduler_service.run()
+    live_pump = asyncio.create_task(_live_pump())
     yield
+    live_pump.cancel()
     try:
         scheduler_service.scheduler.remove_all_jobs()
         scheduler_service.scheduler.shutdown(wait=False)
@@ -386,6 +419,45 @@ def api_recordings() -> dict[str, Any]:
     return {"tree": tree}
 
 
+@app.get("/api/events")
+async def api_events(request: Request):
+    """Server-Sent-Events stream that pushes a ``state`` event whenever the
+    visible state (recordings, running status, schedules) changes.
+
+    The browser opens a single long-lived connection and refreshes the views
+    only on these events, instead of polling every second. A comment ``ping``
+    is emitted periodically so proxies (nginx) keep the connection open.
+    """
+
+    async def event_stream():
+        q = signals.subscribe()
+        last = signals.version()
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    msg = await asyncio.wait_for(q.get(), timeout=25)
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+                    last = signals.version()
+                    continue
+                if msg[0] == "state":
+                    last = signals.version()
+                    yield "event: state\ndata: {}\n\n"
+                else:  # ("progress", rel_path, size)
+                    data = json.dumps({"path": msg[1], "size": msg[2]})
+                    yield f"event: progress\ndata: {data}\n\n"
+        finally:
+            signals.unsubscribe(q)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.delete("/api/recordings")
 def api_delete_recording(path: str = Query(...)) -> dict[str, bool]:
     base = settings.OUTPUT_DIR.resolve()
@@ -397,6 +469,7 @@ def api_delete_recording(path: str = Query(...)) -> dict[str, bool]:
         raise HTTPException(status_code=404, detail="Not found")
     target.unlink()
     _prune_empty_dirs(target.parent, base)
+    signals.bump()
     return {"ok": True}
 
 

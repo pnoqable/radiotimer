@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional
 
 from src import settings
+from src import signals
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +94,7 @@ async def record(
     )
     _active[run_id] = proc
     _paths[run_id] = output_path
+    signals.bump()
 
     try:
         if stop_event is not None:
@@ -110,6 +112,7 @@ async def record(
     finally:
         _active.pop(run_id, None)
         _paths.pop(run_id, None)
+        signals.bump()
 
 
 async def _wait_with_stop(
@@ -137,8 +140,18 @@ def stop(run_id: str) -> bool:
     proc = _active.get(run_id)
     if proc is not None and proc.returncode is None:
         proc.terminate()
+        signals.bump()
         return True
     return False
+
+
+def is_any_active() -> bool:
+    return any(is_active(rid) for rid in _active)
+
+
+def active_recordings():
+    """Return ``(run_id, output_path)`` pairs for all running recordings."""
+    return list(_paths.items())
 
 
 def is_live_path(path: Path) -> bool:
