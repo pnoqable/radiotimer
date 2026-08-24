@@ -101,7 +101,7 @@
   </svg>
   <div class="layout">
     <div class="col-left">
-      <details class="section" open>
+      <details class="section" open id="sec-stations">
         <summary class="section-title">Sender</summary>
         <table id="stations">
           <thead><tr><th>Name</th><th>URL</th><th></th></tr></thead>
@@ -116,7 +116,7 @@
         </form>
       </details>
 
-      <details class="section" open>
+      <details class="section" open id="sec-schedules">
         <summary class="section-title">Sendungen</summary>
         <table id="schedules">
           <thead><tr><th>Titel</th><th>Sender</th><th>Zeit</th><th>Wochentage</th><th>Status</th><th></th></tr></thead>
@@ -145,7 +145,7 @@
     </div>
 
     <div class="col-right">
-      <details class="section" open>
+      <details class="section" open id="sec-recordings">
         <summary class="section-title">Aufnahmen</summary>
         <div id="recordings"></div>
       </details>
@@ -379,47 +379,81 @@
       tb.querySelectorAll("[data-toggle]").forEach(b => b.onclick = () => toggleSchedule(b.dataset.toggle));
     }
 
-    let _expandedFolders = new Set();
+    let _collapsedFolders = new Set();
+    let _collapsedSections = new Set();
     let _lastRecordings = null;
-    let _prefsInitialized = false;
+    let _buildingFolders = false;
 
-    // Persist the open/closed folder state in a cookie so it survives a
-    // full page reload (not just the 1s auto-refresh).
-    const EXPANDED_COOKIE = "radiotimer_expanded";
+    // Persist the open/closed state (collapsed folders + collapsed top-level
+    // sections) in a cookie so it survives a full page reload (not just the
+    // 1s auto-refresh). We store what is COLLAPSED: entries not listed here
+    // default to open, so newly appearing folders stay visible.
+    const UI_COOKIE = "radiotimer_ui";
 
-    function loadExpandedState() {
+    function loadUiState() {
       const m = document.cookie.match(
-        new RegExp("(?:^|;\\s*)" + EXPANDED_COOKIE + "=([^;]*)")
+        new RegExp("(?:^|;\\s*)" + UI_COOKIE + "=([^;]*)")
       );
       if (!m) return;
       try {
-        const arr = JSON.parse(decodeURIComponent(m[1]));
-        if (Array.isArray(arr)) {
-          _expandedFolders = new Set(arr);
-          _prefsInitialized = true;
-        }
+        const data = JSON.parse(decodeURIComponent(m[1]));
+        if (Array.isArray(data.folders))
+          _collapsedFolders = new Set(data.folders);
+        if (Array.isArray(data.sections))
+          _collapsedSections = new Set(data.sections);
       } catch (e) {
         /* ignore malformed cookie */
       }
     }
 
-    function saveExpandedState() {
-      _prefsInitialized = true;
-      const value = encodeURIComponent(JSON.stringify([..._expandedFolders]));
-      document.cookie =
-        EXPANDED_COOKIE + "=" + value + "; path=/; max-age=31536000";
+    function saveUiState() {
+      const value = encodeURIComponent(
+        JSON.stringify({
+          folders: [..._collapsedFolders],
+          sections: [..._collapsedSections],
+        })
+      );
+      document.cookie = UI_COOKIE + "=" + value + "; path=/; max-age=31536000";
     }
 
-    // Re-read the current open/closed state from the DOM and persist it.
-    function syncExpandedFromDom() {
-      const open = new Set();
+    // Re-read the current open/closed folder state from the DOM and persist it.
+    // Fired only when the user actually toggles a folder or after a refresh in
+    // which the tree changed. It must NOT touch the section collapse set, so a
+    // section toggle (which also fires a "toggle" event) cannot clobber the
+    // folder state before the recordings folder tree has been rendered.
+    function syncCollapsedFromDom() {
+      // While the folder tree is being (re)built, the freshly created <details>
+      // elements fire "toggle" events on insertion before the whole tree is in
+      // the document, which would capture only a partial view. Ignore those;
+      // the loadRecordings() code below persists the full state afterwards.
+      if (_buildingFolders) return;
+      _collapsedFolders = new Set();
       document
         .querySelectorAll("#recordings details[data-path]")
         .forEach((d) => {
-          if (d.open) open.add(d.dataset.path);
+          if (!d.open) _collapsedFolders.add(d.dataset.path);
         });
-      _expandedFolders = open;
-      saveExpandedState();
+      saveUiState();
+    }
+
+    // Re-read the open/closed section state and persist it. Separate from the
+    // folder sync so the two never overwrite each other's persisted state.
+    function syncSectionsFromDom() {
+      _collapsedSections = new Set();
+      document.querySelectorAll("details.section").forEach((d) => {
+        if (!d.open && d.id) _collapsedSections.add(d.id);
+      });
+      saveUiState();
+    }
+
+    // Apply the persisted collapse state to the top-level sections (Sender,
+    // Sendungen, Aufnahmen) and keep it up to date on every toggle.
+    function applySectionStates() {
+      document.querySelectorAll("details.section").forEach((d) => {
+        if (!d.id) return;
+        d.open = !_collapsedSections.has(d.id);
+        d.addEventListener("toggle", syncSectionsFromDom);
+      });
     }
 
     async function loadRecordings() {
@@ -436,17 +470,31 @@
 
       // On the first render, keep the state loaded from the cookie.
       // Afterwards, capture the current open/closed state from the DOM.
-      if (!first) syncExpandedFromDom();
+      if (!first) syncCollapsedFromDom();
 
       const root = $("recordings");
-      root.innerHTML = "";
+      _buildingFolders = true;
+      try {
+        root.innerHTML = "";
+      } finally {
+        _buildingFolders = false;
+      }
       if (!tree.children.length) {
         root.innerHTML = '<p class="muted">Noch keine Aufnahmen.</p>';
         return;
       }
-      for (const child of tree.children) {
-        root.appendChild(renderNode(child, [], 0));
+      _buildingFolders = true;
+      try {
+        for (const child of tree.children) {
+          root.appendChild(renderNode(child, [], 0));
+        }
+      } finally {
+        _buildingFolders = false;
       }
+      // Inserting the freshly built <details> elements fires "toggle" events
+      // (ignored while _buildingFolders was set above). Persist the real state
+      // of the complete tree now so the cookie matches what is on screen.
+      syncCollapsedFromDom();
       root.querySelectorAll("[data-del]").forEach((b) => {
         b.onclick = (e) => {
           e.preventDefault();
@@ -487,11 +535,9 @@
       const path = parts.join("/");
       const details = document.createElement("details");
       details.dataset.path = path;
-      // Before the user has expressed any preference (no cookie yet), keep
-      // the top-level (sender) folders open; afterwards honour the cookie
-      // for every level, including the senders.
-      const defaultOpen = !_prefsInitialized && depth < 1;
-      details.open = defaultOpen || _expandedFolders.has(path);
+      // Folders are open unless the user explicitly collapsed them, so folders
+      // that appear later (new recordings) are visible by default.
+      details.open = !_collapsedFolders.has(path);
       const summary = document.createElement("summary");
       summary.textContent = node.name;
       const feed = document.createElement("a");
@@ -503,7 +549,7 @@
       feed.addEventListener("click", (e) => e.stopPropagation());
       summary.appendChild(feed);
       details.appendChild(summary);
-      details.addEventListener("toggle", syncExpandedFromDom);
+      details.addEventListener("toggle", syncCollapsedFromDom);
       for (const child of node.children) {
         details.appendChild(renderNode(child, parts, depth + 1));
       }
@@ -608,8 +654,9 @@
 
     loadStations();
     loadSchedules();
-    loadExpandedState();
     loadRecordings();
+    loadUiState();
+    applySectionStates();
 
     // Live view via Server-Sent Events: the server pushes a "state" event only
     // when something changes (recording starts/stops, file deleted, schedule
