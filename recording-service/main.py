@@ -287,9 +287,11 @@ def api_get_station(station_id: str) -> dict[str, Any]:
 @app.post("/api/stations")
 def api_create_station(payload: dict[str, Any]) -> dict[str, Any]:
     try:
-        return create_station(payload)
+        created = create_station(payload)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    signals.bump()
+    return created
 
 
 @app.put("/api/stations/{station_id}")
@@ -300,6 +302,7 @@ def api_update_station(station_id: str, payload: dict[str, Any]) -> dict[str, An
         updated = update_station(station_id, payload)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    signals.bump()
     return updated  # type: ignore
 
 
@@ -310,6 +313,7 @@ def api_delete_station(station_id: str) -> dict[str, bool]:
             raise HTTPException(status_code=404, detail="Not found")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    signals.bump()
     return {"ok": True}
 
 
@@ -352,6 +356,7 @@ def api_create_schedule(payload: dict[str, Any]) -> dict[str, Any]:
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     reload_job(created["id"])
+    signals.bump()
     return created
 
 
@@ -364,6 +369,7 @@ def api_update_schedule(schedule_id: str, payload: dict[str, Any]) -> dict[str, 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     reload_job(schedule_id)
+    signals.bump()
     return updated  # type: ignore
 
 
@@ -376,6 +382,7 @@ def api_delete_schedule(schedule_id: str) -> dict[str, bool]:
         scheduler_service.scheduler.remove_job(schedule_id)
     except Exception:
         pass
+    signals.bump()
     return {"ok": True}
 
 
