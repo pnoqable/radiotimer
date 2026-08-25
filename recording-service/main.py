@@ -251,6 +251,9 @@ async def lifespan(app: FastAPI):
     load_all_schedules()
     scheduler_service.run()
     live_pump = asyncio.create_task(_live_pump())
+    # Capture the main event loop so signals.bump()/push_progress() can broadcast
+    # from synchronous endpoints (which run in a threadpool without a loop).
+    signals.set_loop(asyncio.get_running_loop())
     yield
     live_pump.cancel()
     try:
