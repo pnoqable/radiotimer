@@ -364,22 +364,32 @@
       for (const r of rows) {
         const tr = document.createElement("tr");
         const statusCell = running.has(r.id)
-          ? (liveUrls.has(r.id)
-              ? `<a href="${liveUrls.get(r.id)}" class="url-link icon-btn" onclick="window.open(this.href,'player','width=600,height=200');return false;">${icon('player')} läuft</a>`
-              : `läuft`)
+          ? `<a href="javascript:void(0)" class="url-link icon-btn" data-toggle="${r.id}" data-running="1">${liveIcon()} läuft</a>`
           : `<a href="javascript:void(0)" class="url-link icon-btn" data-toggle="${r.id}">${r.enabled ? icon('calendar') + ' geplant' : icon('pause') + ' pausiert'}</a>`;
+
+        let actionCell;
+        if (running.has(r.id)) {
+          // Play button moves to the end of the row. When the live URL is not
+          // available yet, show a disabled (greyed) play icon without a link.
+          actionCell = liveUrls.has(r.id)
+            ? `<a href="${liveUrls.get(r.id)}" class="url-link icon-btn" onclick="window.open(this.href,'player','width=600,height=200');return false;" title="Live abspielen">${icon('player')}</a>`
+            : `<span class="icon-btn muted" title="Live-Wiedergabe noch nicht verfügbar">${icon('player')}</span>`;
+        } else {
+          actionCell = `<a href="javascript:void(0)" class="del-link icon-btn" data-del="${r.id}" title="Löschen">${icon('trash')}</a>`;
+        }
+
         tr.innerHTML = `
           <td>${r.title}</td>
           <td>${r.station_name}</td>
           <td>${r.start_time}–${r.end_time}</td>
           <td>${formatFrequency(r.frequency)}</td>
           <td>${statusCell}</td>
-          <td><a href="javascript:void(0)" class="url-link icon-btn" data-edit="${r.id}" title="Bearbeiten">${icon('edit')}</a>${running.has(r.id) ? liveIcon() : `<a href="javascript:void(0)" class="del-link icon-btn" data-del="${r.id}" title="Löschen">${icon('trash')}</a>`}</td>`;
+          <td><a href="javascript:void(0)" class="url-link icon-btn" data-edit="${r.id}" title="Bearbeiten">${icon('edit')}</a>${actionCell}</td>`;
         tb.appendChild(tr);
       }
       tb.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => editSchedule(b.dataset.edit));
       tb.querySelectorAll("[data-del]").forEach(b => b.onclick = () => delSchedule(b.dataset.del));
-      tb.querySelectorAll("[data-toggle]").forEach(b => b.onclick = () => toggleSchedule(b.dataset.toggle));
+      tb.querySelectorAll("[data-toggle]").forEach(b => b.onclick = () => toggleSchedule(b.dataset.toggle, b.dataset.running === "1"));
     }
 
     let _collapsedFolders = new Set();
@@ -585,9 +595,14 @@
       await fetch("/api/schedules/" + id, { method: "DELETE" });
     }
 
-    async function toggleSchedule(id) {
+    async function toggleSchedule(id, running) {
       const cur = await (await fetch("/api/schedules/" + id)).json();
       const willEnable = !cur.enabled;
+      // Pausing a schedule that is currently recording would stop the running
+      // capture, so ask for confirmation before doing so.
+      if (running && !willEnable) {
+        if (!confirm("Aufnahme läuft gerade. Wirklich pausieren?")) return;
+      }
       cur.enabled = willEnable;
       const res = await fetch("/api/schedules/" + id, {
         method: "PUT",
