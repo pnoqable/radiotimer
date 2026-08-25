@@ -283,10 +283,14 @@
     }
 
     async function loadStations() {
+      // Preserve the currently selected station across the rebuild, otherwise
+      // the SSE-driven refresh resets the combo to the placeholder (e.g. right
+      // after saving an edited schedule).
+      const sel = $("station_id");
+      const prevSelected = sel ? sel.value : "";
       const rows = await (await fetch("/api/stations")).json();
       const tb = $("stations").querySelector("tbody");
       tb.innerHTML = "";
-      const sel = $("station_id");
       sel.innerHTML = "";
       const placeholder = document.createElement("option");
       placeholder.value = "";
@@ -304,6 +308,7 @@
         opt.value = s.id; opt.textContent = s.name;
         sel.appendChild(opt);
       }
+      if (prevSelected) sel.value = prevSelected;
       tb.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => editStation(b.dataset.edit));
       tb.querySelectorAll("[data-del]").forEach(b => b.onclick = () => delStation(b.dataset.del));
     }
@@ -330,7 +335,6 @@
         alert("Sender konnte nicht gelöscht werden: " + (err.detail || res.status));
         return;
       }
-      loadStations();
     }
 
     $("station-form").onsubmit = async (e) => {
@@ -347,7 +351,6 @@
           $("station-submit").textContent = "Änderungen speichern";
         }
       }
-      loadStations();
     };
     $("station-reset").onclick = resetStationForm;
 
@@ -514,8 +517,6 @@
         alert("Konnte Aufnahme nicht löschen: " + (err.detail || res.status));
         return;
       }
-      _lastRecordings = null;
-      loadRecordings();
     }
 
     function renderNode(node, pathParts, depth) {
@@ -582,7 +583,6 @@
     async function delSchedule(id) {
       if (!confirm("Sendung löschen?")) return;
       await fetch("/api/schedules/" + id, { method: "DELETE" });
-      loadSchedules();
     }
 
     async function toggleSchedule(id) {
@@ -603,7 +603,6 @@
       // progress (handled server-side), so "deaktiviert" really means no
       // recording happens. Re-enabling a schedule that is within its window
       // starts recording again automatically.
-      loadSchedules();
     }
 
     $("schedule-form").onsubmit = async (e) => {
@@ -644,7 +643,6 @@
           $("submit-btn").textContent = "Änderungen speichern";
         }
       }
-      loadSchedules();
     };
 
     $("reset-btn").onclick = resetScheduleForm;
@@ -664,8 +662,13 @@
     // slow fallback poll covers the rare case that the SSE connection drops.
     const events = new EventSource("/api/events");
     events.addEventListener("state", () => {
-      loadRecordings();
+      // Single source of truth: every state change (recording/schedule/station
+      // created, edited, deleted) is pushed here and refreshes all views. The
+      // mutation handlers no longer reload locally, so this must cover every
+      // list the UI shows.
+      loadStations();
       loadSchedules();
+      loadRecordings();
     });
     events.addEventListener("progress", (e) => {
       // Delta update: only refresh the size of the one file that is still
