@@ -19,16 +19,29 @@ _state_version = 0
 # the wait primitive.
 _subscribers: Set[asyncio.Queue] = set()
 
+# The event loop that owns the SSE subscriber queues. Captured at app startup
+# (see main.py's lifespan) because synchronous endpoints run in a threadpool
+# thread that has NO running loop; calling asyncio.get_running_loop() there
+# would fail and silently drop every broadcast.
+_loop = None
+
+
+def set_loop(loop) -> None:
+    global _loop
+    _loop = loop
+
 
 def version() -> int:
     return _state_version
 
 
 def _broadcast(msg) -> None:
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        return
+    loop = _loop
+    if loop is None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
     for q in list(_subscribers):
         loop.call_soon_threadsafe(q.put_nowait, msg)
 

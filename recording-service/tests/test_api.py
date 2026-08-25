@@ -1,3 +1,4 @@
+import time
 import urllib.parse
 from pathlib import Path
 from unittest import mock
@@ -22,6 +23,25 @@ def test_signals_subscribe_unsubscribe():
     assert ev in signals._subscribers
     signals.unsubscribe(ev)
     assert ev not in signals._subscribers
+
+
+def test_bump_reaches_subscribers_outside_event_loop():
+    # Regression: synchronous endpoints (delete recording/station/schedule) run
+    # in a threadpool without a running loop, so _broadcast must use the loop
+    # captured at startup via set_loop(). Otherwise every push was silently
+    # dropped and only the acting page (which reloads itself) updated.
+    import main as m
+
+    with TestClient(m.app) as client:
+        ev = signals.subscribe()
+        try:
+            signals.bump()
+            # The loop captured at startup processes the scheduled
+            # put_nowait; give its thread a moment, then read non-blocking.
+            time.sleep(0.3)
+            assert ev.get_nowait() == ("state",)
+        finally:
+            signals.unsubscribe(ev)
 
 
 def test_resolve_recording_period_exact_boundary_is_today():
