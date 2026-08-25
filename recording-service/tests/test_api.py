@@ -44,6 +44,38 @@ def test_bump_reaches_subscribers_outside_event_loop():
             signals.unsubscribe(ev)
 
 
+def test_station_and_schedule_deletes_broadcast():
+    # Every state-changing endpoint must bump(), so all SSE clients (including
+    # the acting page) learn about the change via push instead of a local reload.
+    import main as m
+    from src import db as dbmod
+
+    with TestClient(m.app) as client:
+        station = dbmod.create_station({"name": "T", "url": "http://x/y.m3u"})
+        sched = dbmod.create_schedule(
+            {
+                "title": "S",
+                "station_id": station["id"],
+                "start_time": "18:00",
+                "end_time": "19:00",
+            }
+        )
+        ev = signals.subscribe()
+        try:
+            time.sleep(0.3)  # flush any events queued before subscribing
+            r = client.delete(f"/api/schedules/{sched['id']}")
+            assert r.status_code == 200
+            time.sleep(0.3)
+            assert ev.get_nowait() == ("state",)
+
+            r = client.delete(f"/api/stations/{station['id']}")
+            assert r.status_code == 200
+            time.sleep(0.3)
+            assert ev.get_nowait() == ("state",)
+        finally:
+            signals.unsubscribe(ev)
+
+
 def test_resolve_recording_period_exact_boundary_is_today():
     # At the precise scheduled time (second 0, as the cron trigger fires it)
     # the window must resolve to *today*, not tomorrow. Otherwise the
