@@ -89,12 +89,15 @@ async def record(
     logger.info("Starting ffmpeg: %s", " ".join(cmd))
     proc = await asyncio.create_subprocess_exec(
         *cmd,
-        stdout=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
     )
     _active[run_id] = proc
     _paths[run_id] = output_path
     signals.bump()
+
+    error_path = output_path.with_name(output_path.name + ".error.txt")
+    drain = asyncio.ensure_future(_drain_stderr(proc.stderr, error_path))
 
     try:
         if stop_event is not None:
@@ -105,14 +108,52 @@ async def record(
         if proc.returncode not in (0, None) and (
             stop_event is None or not stop_event.is_set()
         ):
-            stderr = await proc.stderr.read() if proc.stderr else b""
+            # Let the stderr drain finish so the error log file is actually
+            # written before record() returns (the finally cancels it otherwise).
+            try:
+                await asyncio.wait_for(drain, timeout=2.0)
+            except (asyncio.TimeoutError, Exception):
+                pass
+            logger.error(
+                "Recording %s failed: ffmpeg exited with code %s. "
+                "Error log: %s",
+                run_id, proc.returncode, error_path,
+            )
             raise RuntimeError(
-                f"ffmpeg exited with code {proc.returncode}: {stderr.decode(errors='replace')[:500]}"
+                f"ffmpeg exited with code {proc.returncode}; error log: {error_path}"
             )
     finally:
+        drain.cancel()
         _active.pop(run_id, None)
         _paths.pop(run_id, None)
         signals.bump()
+
+
+async def _drain_stderr(stream, error_path: Path):
+    """Write ffmpeg's stderr straight to ``error_path`` as it arrives.
+
+    The file is only created if ffmpeg actually emits something, so an empty
+    stderr leaves no file behind. Returns ``error_path`` if a log file was
+    written, otherwise ``None``. Any read error or cancellation is swallowed so
+    this task never raises into its caller.
+    """
+    if stream is None:
+        return None
+    fh = None
+    try:
+        while True:
+            chunk = await stream.read(4096)
+            if not chunk:
+                break
+            if fh is None:
+                fh = open(error_path, "wb")
+            fh.write(chunk)
+    except (asyncio.CancelledError, Exception):
+        pass
+    finally:
+        if fh is not None:
+            fh.close()
+    return error_path if fh is not None else None
 
 
 async def _wait_with_stop(
