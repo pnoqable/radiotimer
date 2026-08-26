@@ -156,3 +156,89 @@ async def test_record_stop_event_terminates_early(stub_ffmpeg, tmp_path):
     # Should finish well before the 30s stub sleep because we terminate it.
     await asyncio.wait_for(task, timeout=5)
     assert not ffmpeg_recorder.is_active("job2")
+
+
+async def test_record_captures_stderr_on_failure(monkeypatch):
+    """A non-zero exit must surface ffmpeg's stderr and clear the live state."""
+
+    class FakeProc:
+        returncode = 1
+
+        def __init__(self):
+            self.stderr = asyncio.StreamReader()
+            self.stderr.feed_data(b"Connection refused: 403\n")
+            self.stderr.feed_eof()
+
+        async def wait(self):
+            return 1
+
+        def terminate(self):
+            pass
+
+    async def fake_exec(*args, **kwargs):
+        return FakeProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    out = Path("/tmp/rec_err.mp3")
+    with pytest.raises(RuntimeError) as exc:
+        await ffmpeg_recorder.record(
+            run_id="j-err",
+            url="http://example.com/stream.mp3",
+            duration_seconds=1,
+            output_path=out,
+        )
+    assert "exited with code 1" in str(exc.value)
+    # The captured stderr must be written next to the recording file.
+    error_file = out.with_name(out.name + ".error.txt")
+    try:
+        assert error_file.exists()
+        text = error_file.read_text()
+        assert "Connection refused" in text
+    finally:
+        error_file.unlink(missing_ok=True)
+    # record() returned, so its finally must have cleared the live state.
+    assert not ffmpeg_recorder.is_active("j-err")
+    assert not ffmpeg_recorder.is_live_path(out)
+
+
+async def test_record_does_not_hang_when_stderr_never_eofs(monkeypatch):
+    """Regression: a stuck stderr pipe (no EOF) must not block record() forever.
+
+    Previously the code did `await proc.stderr.read()` *after* proc.wait(), which
+    hung indefinitely when ffmpeg closed without delivering EOF and left the
+    recording stuck as "live" in the UI. Now stderr is drained concurrently and
+    the error text is read with a timeout, so record() always terminates.
+    """
+
+    class FakeProc:
+        returncode = -15
+
+        def __init__(self):
+            # Deliberately never feed EOF, simulating a stuck pipe.
+            self.stderr = asyncio.StreamReader()
+
+        async def wait(self):
+            return -15
+
+        def terminate(self):
+            pass
+
+    async def fake_exec(*args, **kwargs):
+        return FakeProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    out = Path("/tmp/rec_hang.mp3")
+
+    # Without the fix this would hang past the 10s outer bound.
+    with pytest.raises(RuntimeError):
+        await asyncio.wait_for(
+            ffmpeg_recorder.record(
+                run_id="j-hang",
+                url="http://example.com/stream.mp3",
+                duration_seconds=1,
+                output_path=out,
+            ),
+            timeout=10,
+        )
+    assert not ffmpeg_recorder.is_active("j-hang")
+    assert not ffmpeg_recorder.is_live_path(out)
