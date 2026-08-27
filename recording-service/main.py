@@ -435,25 +435,24 @@ async def api_events(request: Request):
     visible state (recordings, running status, schedules) changes.
 
     The browser opens a single long-lived connection and refreshes the views
-    only on these events, instead of polling every second. A comment ``ping``
-    is emitted periodically so proxies (nginx) keep the connection open.
+    only on these events, instead of polling every second. A named ``ping``
+    event carrying a timestamp is emitted periodically; it keeps proxies
+    (nginx) from closing the idle connection and lets the client detect a
+    dropped connection (no ping received for a while).
     """
 
     async def event_stream():
         q = signals.subscribe()
-        last = signals.version()
         try:
             while True:
                 if await request.is_disconnected():
                     break
                 try:
-                    msg = await asyncio.wait_for(q.get(), timeout=25)
+                    msg = await asyncio.wait_for(q.get(), timeout=5)
                 except asyncio.TimeoutError:
-                    yield ": ping\n\n"
-                    last = signals.version()
+                    yield "event: ping\ndata: {}\n\n"
                     continue
                 if msg[0] == "state":
-                    last = signals.version()
                     yield "event: state\ndata: {}\n\n"
                 else:  # ("progress", rel_path, size)
                     data = json.dumps({"path": msg[1], "size": msg[2]})

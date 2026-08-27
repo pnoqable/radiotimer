@@ -665,47 +665,49 @@
     resetStationForm();
     resetScheduleForm();
 
-    loadStations();
-    loadSchedules();
-    loadRecordings();
     loadUiState();
     applySectionStates();
 
-    // Live view via Server-Sent Events: the server pushes a "state" event only
-    // when something changes (recording starts/stops, file deleted, schedule
-    // edited), so we refresh without polling the filesystem every second. A
-    // slow fallback poll covers the rare case that the SSE connection drops.
-    const events = new EventSource("/api/events");
-    events.addEventListener("state", () => {
-      // Single source of truth: every state change (recording/schedule/station
-      // created, edited, deleted) is pushed here and refreshes all views. The
-      // mutation handlers no longer reload locally, so this must cover every
-      // list the UI shows.
+    let lastEvent = Date.now();
+    function silentRefresh() {
       loadStations();
       loadSchedules();
       loadRecordings();
-    });
-    events.addEventListener("progress", (e) => {
-      // Delta update: only refresh the size of the one file that is still
-      // being written, without re-walking the whole recordings tree.
-      try {
-        const d = JSON.parse(e.data);
-        const mb = (d.size / 1024 / 1024).toFixed(2) + " MB";
-        let found = false;
-        for (const r of document.querySelectorAll("#recordings [data-path]")) {
-          if (r.dataset.path === d.path) {
-            const span = r.querySelector(".size");
-            if (span) span.textContent = mb;
-            found = true;
-            break;
+      lastEvent = Date.now();
+    }
+    function createEventSource() {
+      const eventSource = new EventSource("/api/events");
+      eventSource.onopen = silentRefresh
+      eventSource.addEventListener("state", silentRefresh);
+      eventSource.addEventListener("progress", (e) => {
+        try {
+          const d = JSON.parse(e.data);
+          const mb = (d.size / 1024 / 1024).toFixed(2) + " MB";
+          let found = false;
+          for (const r of document.querySelectorAll("#recordings [data-path]")) {
+            if (r.dataset.path === d.path) {
+              const span = r.querySelector(".size");
+              if (span) span.textContent = mb;
+              found = true;
+              break;
+            }
           }
-        }
-        // The "state" event fired before ffmpeg had created the file, so the
-        // row isn't in the tree yet. Once the file exists (this tick) a full
-        // refresh shows it; afterwards progress only updates the size.
-        if (!found) loadRecordings();
-      } catch (_) {}
-    });
+          if (!found) loadRecordings();
+          else lastEvent = Date.now();
+        } catch (_) {}
+      });
+      eventSource.addEventListener("ping", (e) => {
+        lastEvent = Date.now();
+      });
+      return eventSource;
+    }
+    let events = createEventSource();
+    setInterval(() => {
+      if (Date.now() - lastEvent > 10000) {
+        events.close();
+        events = createEventSource();
+      }
+    }, 1000);
   </script>
 </body>
 </html>
