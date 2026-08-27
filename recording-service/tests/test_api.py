@@ -388,7 +388,7 @@ def test_status_includes_live_url_for_running(tmp_path, monkeypatch):
             job_status = next(j for j in status["jobs"] if j["id"] == sched["id"])
             assert job_status["running"] is True
             assert job_status["live_url"] is not None
-            assert job_status["live_url"].startswith("/api/recordings/live?path=")
+            assert job_status["live_url"].startswith("/api/recordings/play?path=")
             assert "BR/S/live.mp3" in job_status["live_url"]
     finally:
         fr._paths.pop(sched["id"], None)
@@ -435,7 +435,7 @@ def test_recordings_live_serves_static_when_not_recording(tmp_path, monkeypatch)
     rel = rec.relative_to(tmp_path).as_posix()
 
     with TestClient(m.app) as client:
-        res = client.get("/api/recordings/live?path=" + urllib.parse.quote(rel))
+        res = client.get("/api/recordings/play?path=" + urllib.parse.quote(rel))
         assert res.status_code == 200
         assert res.content == b"hello"
 
@@ -447,7 +447,7 @@ def test_recordings_live_rejects_traversal(tmp_path, monkeypatch):
 
     with TestClient(m.app) as client:
         res = client.get(
-            "/api/recordings/live?path=" + urllib.parse.quote("../../etc/passwd")
+            "/api/recordings/play?path=" + urllib.parse.quote("../../etc/passwd")
         )
         assert res.status_code == 400
 
@@ -472,7 +472,7 @@ def test_podcast_feed_lists_recordings(tmp_path, monkeypatch):
         body = res.text
         assert "<rss" in body and "<channel>" in body
         # Enclosure points at the static recording endpoint with an absolute URL.
-        assert "http://example.com/api/recordings/live?path=" in body
+        assert "http://example.com/api/recordings/play?path=" in body
         assert urllib.parse.quote(rel) in body
         # Episode title joins the file name with the folder parts in reverse.
         assert "2026-08-10 23-05 Jazz, BR" in body
