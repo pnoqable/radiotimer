@@ -113,7 +113,7 @@ def _build_recordings_tree(root: Path) -> dict[str, Any]:
                     "type": "file",
                     "path": rel,
             "size": path.stat().st_size,
-            "url": f"/api/recordings/live?path={urllib.parse.quote(rel)}",
+            "url": f"/api/recordings/play?path={urllib.parse.quote(rel)}",
             "live": is_live_path(path),
                 }
             )
@@ -181,7 +181,7 @@ def _build_podcast_feed(folder_rel: str, request: Request) -> str:
         if folder_parts:
             title = title + " " + ", ".join(reversed(folder_parts))
         media_type = mimetypes.guess_type(str(entry))[0] or "application/octet-stream"
-        enc_url = public + "/api/recordings/live?path=" + urllib.parse.quote(rel)
+        enc_url = public + "/api/recordings/play?path=" + urllib.parse.quote(rel)
         items.append(
             {
                 "title": title,
@@ -405,7 +405,7 @@ def api_status() -> dict[str, Any]:
             if lp is not None:
                 try:
                     rel = lp.resolve().relative_to(settings.OUTPUT_DIR.resolve()).as_posix()
-                    live_url = f"/api/recordings/live?path={urllib.parse.quote(rel)}"
+                    live_url = f"/api/recordings/play?path={urllib.parse.quote(rel)}"
                 except Exception:
                     live_url = None
         jobs.append(
@@ -483,8 +483,8 @@ def api_delete_recording(path: str = Query(...)) -> dict[str, bool]:
     return {"ok": True}
 
 
-@app.get("/api/recordings/live")
-def api_recordings_live(path: str = Query(...)):
+@app.get("/api/recordings/play")
+def api_recordings_play(path: str = Query(...)):
     """Stream a recording file.
 
     If the file is currently being recorded, it is served as a live
