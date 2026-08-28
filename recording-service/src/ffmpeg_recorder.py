@@ -23,14 +23,13 @@ async def record(
     url: str,
     duration_seconds: float,
     output_path: Path,
-    stop_event: Optional[asyncio.Event] = None,
     ffmpeg_bin: str = "ffmpeg",
 ) -> None:
     """Record a stream with ffmpeg for the given duration.
 
     ffmpeg is asked to reconnect on dropouts and to stop cleanly after the
-    duration. If stop_event is set, the process is terminated early via SIGTERM
-    (ffmpeg then finalises the file instead of being killed hard).
+    duration. A running recording can be stopped via :func:`stop`, which sends
+    SIGTERM so ffmpeg finalises the file instead of being killed hard.
 
     ``ffmpeg_bin`` is the ffmpeg executable (overridable for testing).
     """
@@ -96,32 +95,25 @@ async def record(
     _paths[run_id] = output_path
     signals.bump()
 
-    error_path = output_path.with_name(output_path.name + ".error.txt")
-    drain = asyncio.ensure_future(_drain_stderr(proc.stderr, error_path))
+    drain = asyncio.ensure_future(_drain_stderr(proc.stderr))
 
     try:
-        if stop_event is not None:
-            await _wait_with_stop(proc, stop_event)
-        else:
-            await proc.wait()
+        await proc.wait()
 
-        if proc.returncode not in (0, None) and (
-            stop_event is None or not stop_event.is_set()
-        ):
-            # Let the stderr drain finish so the error log file is actually
-            # written before record() returns (the finally cancels it otherwise).
+        # A recording stopped via :func:`stop` (SIGTERM) exits with code -15;
+        # treat that as a normal stop, not a failure.
+        if proc.returncode not in (0, None, -15):
+            logger.error(
+                "Recording %s failed: ffmpeg exited with code %s",
+                run_id, proc.returncode,
+            )
             try:
-                await asyncio.wait_for(drain, timeout=2.0)
+                stderr_data = await asyncio.wait_for(drain, timeout=2.0)
+                for line in stderr_data.decode("utf-8", errors="replace").splitlines():
+                    logger.error("  ffmpeg: %s", line)
             except (asyncio.TimeoutError, Exception):
                 pass
-            logger.error(
-                "Recording %s failed: ffmpeg exited with code %s. "
-                "Error log: %s",
-                run_id, proc.returncode, error_path,
-            )
-            raise RuntimeError(
-                f"ffmpeg exited with code {proc.returncode}; error log: {error_path}"
-            )
+            raise RuntimeError(f"ffmpeg exited with code {proc.returncode}")
     finally:
         drain.cancel()
         _active.pop(run_id, None)
@@ -129,47 +121,20 @@ async def record(
         signals.bump()
 
 
-async def _drain_stderr(stream, error_path: Path):
-    """Write ffmpeg's stderr straight to ``error_path`` as it arrives.
-
-    The file is only created if ffmpeg actually emits something, so an empty
-    stderr leaves no file behind. Returns ``error_path`` if a log file was
-    written, otherwise ``None``. Any read error or cancellation is swallowed so
-    this task never raises into its caller.
-    """
+async def _drain_stderr(stream) -> bytes:
+    """Read ffmpeg's stderr into memory and return it."""
     if stream is None:
-        return None
-    fh = None
+        return b""
+    buf = bytearray()
     try:
         while True:
             chunk = await stream.read(4096)
             if not chunk:
                 break
-            if fh is None:
-                fh = open(error_path, "wb")
-            fh.write(chunk)
+            buf += chunk
     except (asyncio.CancelledError, Exception):
         pass
-    finally:
-        if fh is not None:
-            fh.close()
-    return error_path if fh is not None else None
-
-
-async def _wait_with_stop(
-    proc: asyncio.subprocess.Process, stop_event: asyncio.Event
-) -> None:
-    try:
-        await asyncio.wait_for(stop_event.wait(), timeout=None)
-    except asyncio.TimeoutError:
-        pass
-    if proc.returncode is None:
-        # Ask ffmpeg to finalise and exit cleanly (SIGTERM), not SIGKILL.
-        proc.terminate()
-        try:
-            await proc.wait()
-        except Exception:
-            pass
+    return bytes(buf)
 
 
 def is_active(run_id: str) -> bool:
