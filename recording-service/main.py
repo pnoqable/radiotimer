@@ -3,6 +3,7 @@ import json
 import logging
 import mimetypes
 import os
+import shutil
 import re
 import urllib.parse
 import xml.sax.saxutils as _xml_escape
@@ -427,6 +428,22 @@ def api_recordings() -> dict[str, Any]:
         return {"tree": {"name": settings.OUTPUT_DIR.name, "type": "folder", "children": []}}
     tree = _build_recordings_tree(settings.OUTPUT_DIR)
     return {"tree": tree}
+
+
+@app.get("/api/disk")
+def api_disk() -> dict[str, Any]:
+    """Report disk usage of the filesystem holding the recordings directory.
+
+    Useful for spotting a nearly-full SD card or a mounted USB stick. Returns
+    total/used/free in bytes plus the resolved mount path.
+    """
+    du = shutil.disk_usage(settings.OUTPUT_DIR)
+    return {
+        "path": str(settings.OUTPUT_DIR.resolve()),
+        "total": du.total,
+        "used": du.used,
+        "free": du.free,
+    }
 
 
 @app.get("/api/events")
