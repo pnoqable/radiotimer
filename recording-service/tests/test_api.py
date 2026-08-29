@@ -542,3 +542,16 @@ def test_update_without_enabled_keeps_state(tmp_path, monkeypatch):
         assert res.json()["enabled"] is False
         assert res.json()["title"] == "S2"
 
+
+def test_api_disk_reports_usage():
+    import main as m
+
+    with TestClient(m.app) as client:
+        res = client.get("/api/disk")
+        assert res.status_code == 200
+        data = res.json()
+        assert {"path", "total", "used", "free"} <= data.keys()
+        assert data["total"] >= data["used"]
+        assert data["free"] == data["total"] - data["used"]
+        assert data["path"] == str(settings.OUTPUT_DIR.resolve())
+
