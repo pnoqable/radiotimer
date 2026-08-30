@@ -60,6 +60,38 @@ def test_build_schedule_midnight_wrap(monkeypatch, tmp_path):
     assert schedule.duration.in_seconds() == 7200
 
 
+def test_build_schedule_one_off_window(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "TIME_ZONE", "UTC")
+    monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
+
+    row = {
+        "id": str(uuid.uuid4()),
+        "title": "Sonderfolge",
+        "station_name": "BR Klassik",
+        "station_url": "http://example.com/stream.m3u",
+        "start_time": "20:00",
+        "end_time": "21:00",
+        "frequency": "",
+        "audio_format": "mp3",
+        "one_off": True,
+        "start_date": "2026-12-24",
+    }
+    schedule = schedule_builder.build_schedule(row)
+
+    assert schedule.one_off is True
+    assert schedule.start_date == "2026-12-24"
+    # Start fires at the schedule's UTC start time on the given date.
+    period = schedule.resolve_recording_period(
+        pendulum.datetime(2026, 12, 24, 22, 30, 0, tz="UTC")
+    )
+    assert period.start == pendulum.datetime(2026, 12, 24, 20, 0, 0, tz="UTC")
+    assert period.end == pendulum.datetime(2026, 12, 24, 21, 0, 0, tz="UTC")
+    # The absolute UTC start feed to the scheduler matches the window start.
+    assert schedule.one_off_start() == pendulum.datetime(
+        2026, 12, 24, 20, 0, 0, tz="UTC"
+    )
+
+
 def test_recording_task_path_uses_pattern(monkeypatch, tmp_path):
     # Adopted from the old "VLC Timer": <station>/<title>/<date> <HH-MM>.mp3
     monkeypatch.setattr(settings, "PATTERN", "{station}/{title}/{date} {start_hm}.{ext}")

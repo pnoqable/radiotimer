@@ -118,6 +118,11 @@ class RecordingSchedule:
     # Optional
     frequency: str = "*"  # Defaults to "daily" cron expression
 
+    # One-off recordings: schedule fires exactly once on `start_date`
+    # (YYYY-MM-DD, local calendar date) at the schedule's start time.
+    one_off: bool = False
+    start_date: Optional[str] = None
+
     @property
     def end_timeofday(self) -> Time:
         return self.start_timeofday.add(seconds=self.duration.in_seconds())
@@ -126,6 +131,19 @@ class RecordingSchedule:
     @property
     def cron_expression(self) -> str:
         return f"{self.start_timeofday.minute} {self.start_timeofday.hour} * * {self.frequency}"
+
+    # Absolute UTC start instant for a one-off schedule (else None).
+    def one_off_start(self) -> Optional[DateTime]:
+        if not (self.one_off and self.start_date):
+            return None
+        y, mo, d = (int(p) for p in self.start_date.split("-"))
+        return pendulum.datetime(
+            y, mo, d,
+            self.start_timeofday.hour,
+            self.start_timeofday.minute,
+            self.start_timeofday.second,
+            tz="UTC",
+        )
 
     def __post_init__(
         self,
@@ -157,6 +175,20 @@ class RecordingSchedule:
         )
 
     def resolve_recording_period(self, recording_start_time: DateTime) -> TimePeriod:
+        if self.one_off and self.start_date:
+            # Single occurrence: [start_date @ start_timeofday, +duration) in
+            # UTC, mirroring how the recurring cron fires at start_timeofday.
+            y, mo, d = (int(p) for p in self.start_date.split("-"))
+            start = pendulum.datetime(
+                y, mo, d,
+                self.start_timeofday.hour,
+                self.start_timeofday.minute,
+                self.start_timeofday.second,
+                tz="UTC",
+            )
+            end = start + self.duration.as_timedelta()
+            return TimePeriod(start=start, end=end)
+
         # Find the recording window (start, start+duration) that contains the
         # given time. croniter's get_prev/get_next are exclusive of an exact
         # match, so at the precise fire time (second 0, as produced by the

@@ -34,6 +34,8 @@ def build_schedule(row: dict[str, Any]) -> RecordingSchedule:
             "station_url": row["station_url"],
         },
         frequency=frequency,
+        one_off=row.get("one_off", False),
+        start_date=row.get("start_date"),
     )
 
     # Align the schedule id with the DB id so the scheduler job can be

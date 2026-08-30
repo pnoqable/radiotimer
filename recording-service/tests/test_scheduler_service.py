@@ -83,6 +83,29 @@ def test_not_due_schedule_job_gets_a_next_run_time(tmp_path, monkeypatch):
     asyncio.run(check())
 
 
+def test_one_off_uses_date_trigger(tmp_path):
+    from apscheduler.triggers.cron import CronTrigger
+    from apscheduler.triggers.date import DateTrigger
+
+    svc = _svc()
+
+    recurring = _make_schedule(tmp_path)
+    assert isinstance(svc._get_trigger(recurring), CronTrigger)
+
+    once = RecordingSchedule(
+        title="T",
+        station_name="S",
+        station_url="http://example.com/stream.m3u",
+        start_timeofday=pendulum.time(20, 0),
+        duration=pendulum.duration(hours=1),
+        audio_format="mp3",
+        output_dir=tmp_path,
+        one_off=True,
+        start_date="2026-12-24",
+    )
+    assert isinstance(svc._get_trigger(once), DateTrigger)
+
+
 def test_active_schedule_is_not_started_again(tmp_path, monkeypatch):
     fixed = pendulum.datetime(2026, 1, 2, 20, 30, 0, tz="UTC")
     monkeypatch.setattr(utils, "get_utc_now", lambda: fixed)

@@ -50,10 +50,20 @@ def init_db() -> None:
             frequency    TEXT NOT NULL DEFAULT '*',
             audio_format TEXT NOT NULL DEFAULT 'mp3',
             enabled      INTEGER NOT NULL DEFAULT 1,
+            one_off      INTEGER NOT NULL DEFAULT 0,
+            start_date   TEXT,
             FOREIGN KEY (station_id) REFERENCES stations(id)
         )
         """
     )
+
+    # One-time migration: add the one_off / start_date columns needed for
+    # single (date-bound) recordings. Existing rows default to recurring.
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(schedules)").fetchall()]
+    if "one_off" not in cols:
+        conn.execute("ALTER TABLE schedules ADD COLUMN one_off INTEGER NOT NULL DEFAULT 0")
+    if "start_date" not in cols:
+        conn.execute("ALTER TABLE schedules ADD COLUMN start_date TEXT")
 
     # One-time migration: the old schema stored the stream URL directly on the
     # schedule. Move those into stations and reference them instead. Also covers
@@ -205,6 +215,8 @@ def _schedule_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "frequency": row["frequency"],
         "audio_format": row["audio_format"],
         "enabled": bool(row["enabled"]),
+        "one_off": bool(row["one_off"]),
+        "start_date": row["start_date"],
     }
 
 
@@ -246,8 +258,8 @@ def create_schedule(data: dict[str, Any]) -> dict[str, Any]:
     conn.execute(
         """
         INSERT INTO schedules
-            (id, title, station_id, start_time, end_time, frequency, audio_format, enabled)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (id, title, station_id, start_time, end_time, frequency, audio_format, enabled, one_off, start_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             schedule_id,
@@ -258,6 +270,8 @@ def create_schedule(data: dict[str, Any]) -> dict[str, Any]:
             data.get("frequency", "*"),
             data.get("audio_format", "mp3"),
             1 if data.get("enabled", True) else 0,
+            1 if data.get("one_off", False) else 0,
+            data.get("start_date"),
         ),
     )
     conn.commit()
@@ -279,7 +293,7 @@ def update_schedule(schedule_id: str, data: dict[str, Any]) -> Optional[dict[str
         """
         UPDATE schedules SET
             title = ?, station_id = ?, start_time = ?, end_time = ?,
-            frequency = ?, audio_format = ?, enabled = ?
+            frequency = ?, audio_format = ?, enabled = ?, one_off = ?, start_date = ?
         WHERE id = ?
         """,
         (
@@ -290,6 +304,8 @@ def update_schedule(schedule_id: str, data: dict[str, Any]) -> Optional[dict[str
             data.get("frequency", "*"),
             data.get("audio_format", "mp3"),
             1 if data.get("enabled", existing["enabled"]) else 0,
+            1 if data.get("one_off", bool(existing["one_off"])) else 0,
+            data.get("start_date", existing["start_date"]),
             schedule_id,
         ),
     )

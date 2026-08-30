@@ -10,7 +10,7 @@ import xml.sax.saxutils as _xml_escape
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import uvicorn
 import pendulum
@@ -387,11 +387,26 @@ def api_delete_schedule(schedule_id: str) -> dict[str, bool]:
     return {"ok": True}
 
 
+def _live_url_for(schedule_id: str) -> Optional[str]:
+    if not is_active(schedule_id):
+        return None
+    lp = get_live_path(schedule_id)
+    if lp is None:
+        return None
+    try:
+        rel = lp.resolve().relative_to(settings.OUTPUT_DIR.resolve()).as_posix()
+        return f"/api/recordings/play?path={urllib.parse.quote(rel)}"
+    except Exception:
+        return None
+
+
 @app.get("/api/status")
 def api_status() -> dict[str, Any]:
     now = utils.TimeProvider().get_current_time()
     jobs = []
+    seen: set[str] = set()
     for job in scheduler_service.scheduler.get_jobs():
+        seen.add(job.id)
         due = False
         row = get_schedule(job.id)
         if row and row["enabled"]:
@@ -400,15 +415,6 @@ def api_status() -> dict[str, Any]:
                 due = period.start <= now <= period.end
             except Exception:
                 due = False
-        live_url = None
-        if is_active(job.id):
-            lp = get_live_path(job.id)
-            if lp is not None:
-                try:
-                    rel = lp.resolve().relative_to(settings.OUTPUT_DIR.resolve()).as_posix()
-                    live_url = f"/api/recordings/play?path={urllib.parse.quote(rel)}"
-                except Exception:
-                    live_url = None
         jobs.append(
             {
                 "id": job.id,
@@ -416,7 +422,24 @@ def api_status() -> dict[str, Any]:
                 "next_run": str(job.next_run_time),
                 "running": is_active(job.id),
                 "due": due,
-                "live_url": live_url,
+                "live_url": _live_url_for(job.id),
+            }
+        )
+    # One-off schedules: APScheduler removes the DateTrigger job as soon as it
+    # fires, so an in-progress capture would no longer appear in get_jobs().
+    # Keep reporting it (as running) while it is actually recording.
+    for row in list_schedules():
+        if row["id"] in seen or not is_active(row["id"]):
+            continue
+        seen.add(row["id"])
+        jobs.append(
+            {
+                "id": row["id"],
+                "name": row["title"],
+                "next_run": "",
+                "running": True,
+                "due": True,
+                "live_url": _live_url_for(row["id"]),
             }
         )
     return {"jobs": jobs}

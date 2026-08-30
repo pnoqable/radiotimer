@@ -394,6 +394,49 @@ def test_status_includes_live_url_for_running(tmp_path, monkeypatch):
         fr._paths.pop(sched["id"], None)
 
 
+def test_active_one_off_shows_running_without_scheduler_job(tmp_path, monkeypatch):
+    # A one-off DateTrigger job is removed by APScheduler once it fires, so it
+    # is no longer in get_jobs() while the capture is still in progress. It must
+    # still be reported as running (with a live URL) in the status endpoint.
+    monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")
+    import main as m
+
+    from src import ffmpeg_recorder as fr
+
+    db.init_db()
+    station = db.create_station({"name": "BR", "url": "http://x/y.m3u"})
+    sched = db.create_schedule(
+        {
+            "title": "Sonderfolge",
+            "station_id": station["id"],
+            "start_time": "20:00",
+            "end_time": "21:00",
+            "frequency": "",
+            "one_off": True,
+            "start_date": "2030-12-24",
+        }
+    )
+
+    sched_mock = mock.MagicMock()
+    sched_mock.get_jobs.return_value = []
+    monkeypatch.setattr(m.scheduler_service, "scheduler", sched_mock)
+    monkeypatch.setattr(m, "is_active", lambda _id: True)
+
+    live_file = tmp_path / "BR" / "Sonderfolge" / "live.mp3"
+    fr._paths[sched["id"]] = live_file
+
+    try:
+        with TestClient(m.app) as client:
+            status = client.get("/api/status").json()
+            job_status = next(j for j in status["jobs"] if j["id"] == sched["id"])
+            assert job_status["running"] is True
+            assert job_status["live_url"] is not None
+            assert "BR/Sonderfolge/live.mp3" in job_status["live_url"]
+    finally:
+        fr._paths.pop(sched["id"], None)
+
+
 def test_live_file_follows_growth(tmp_path, monkeypatch):
     import asyncio
 
@@ -554,4 +597,34 @@ def test_api_disk_reports_usage():
         assert data["total"] >= data["used"]
         assert data["free"] == data["total"] - data["used"]
         assert data["path"] == str(settings.OUTPUT_DIR.resolve())
+
+
+def _make_one_off_payload(station_id, start_date):
+    return {
+        "title": "Sonderfolge",
+        "station_id": station_id,
+        "start_time": "20:00",
+        "end_time": "21:00",
+        "frequency": "",
+        "one_off": True,
+        "start_date": start_date,
+    }
+
+
+def test_create_one_off_schedule(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")
+    import main as m
+
+    db.init_db()
+    station = db.create_station({"name": "BR", "url": "http://x/y.m3u"})
+
+    with TestClient(m.app) as client:
+        res = client.post(
+            "/api/schedules", json=_make_one_off_payload(station["id"], "2030-12-24")
+        )
+        assert res.status_code == 200
+        d = res.json()
+        assert d["one_off"] is True
+        assert d["start_date"] == "2030-12-24"
 
