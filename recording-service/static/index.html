@@ -122,7 +122,7 @@
       <details class="section" open id="sec-schedules">
         <summary class="section-title">Sendungen</summary>
         <table id="schedules">
-          <thead><tr><th>Titel</th><th>Sender</th><th>Zeit</th><th>Wochentage</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Titel</th><th>Sender</th><th>Zeit</th><th>Tage</th><th>Status</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
         <form id="schedule-form">
@@ -131,7 +131,14 @@
           <label>Sender<select id="station_id" required></select></label>
           <label>Start (HH:MM)<input id="start_time" required /></label>
           <label>Ende (HH:MM)<input id="end_time" required /></label>
-          <fieldset class="days">
+          <label>Wiederholung
+            <select id="schedule-mode">
+              <option value="once">Einmalig</option>
+              <option value="recurring">Wöchentlich</option>
+            </select>
+          </label>
+          <label id="once-date-wrap" style="display:none;">Datum<input type="date" id="schedule-date" /></label>
+          <fieldset class="days" id="days-fieldset">
             <legend>Wochentage</legend>
             <label><input type="checkbox" class="day" value="mon" />Montags</label>
             <label><input type="checkbox" class="day" value="tue" />Dienstags</label>
@@ -290,6 +297,17 @@
         .join(", ");
     }
 
+    function formatScheduleDays(r) {
+      if (r.one_off) {
+        if (!r.start_date) return "–";
+        const [y, mo, d] = r.start_date.split("-");
+        return new Date(y, mo - 1, d).toLocaleDateString("de-DE", {
+          day: "2-digit", month: "2-digit", year: "numeric",
+        });
+      }
+      return formatFrequency(r.frequency);
+    }
+
     function getFrequency() {
       const idx = new Set();
       document.querySelectorAll(".day:checked").forEach((c) => idx.add(TOKEN_TO_IDX[c.value]));
@@ -302,6 +320,17 @@
         c.checked = idx.has(TOKEN_TO_IDX[c.value]);
       });
     }
+
+    // Einmalige vs. wöchentliche Sendung: entweder Datum oder Wochentage.
+    function currentScheduleMode() {
+      return $("schedule-mode").value === "once" ? "once" : "recurring";
+    }
+    function applyScheduleMode() {
+      const once = currentScheduleMode() === "once";
+      $("days-fieldset").style.display = once ? "none" : "";
+      $("once-date-wrap").style.display = once ? "" : "none";
+    }
+    $("schedule-mode").addEventListener("change", applyScheduleMode);
 
     async function loadStations() {
       // Preserve the currently selected station across the rebuild, otherwise
@@ -403,7 +432,7 @@
           <td>${r.title}</td>
           <td>${r.station_name}</td>
           <td>${r.start_time}–${r.end_time}</td>
-          <td>${formatFrequency(r.frequency)}</td>
+          <td>${formatScheduleDays(r)}</td>
           <td>${statusCell}</td>
           <td><a href="javascript:void(0)" class="url-link icon-btn" data-edit="${r.id}" title="Bearbeiten">${icon('edit')}</a>${actionCell}</td>`;
         tb.appendChild(tr);
@@ -596,6 +625,9 @@
       $("start_time").value = r.start_time;
       $("end_time").value = r.end_time;
       setFrequency(r.frequency);
+      $("schedule-mode").value = r.one_off ? "once" : "recurring";
+      $("schedule-date").value = r.start_date || "";
+      applyScheduleMode();
       $("start_time").classList.remove("invalid");
       $("end_time").classList.remove("invalid");
       $("submit-btn").textContent = "Änderungen speichern";
@@ -605,9 +637,12 @@
       $("schedule-form").reset();
       $("station_id").selectedIndex = 0;
       $("id").value = "";
+      $("schedule-mode").value = "once";
+      $("schedule-date").value = "";
       $("start_time").classList.remove("invalid");
       $("end_time").classList.remove("invalid");
       document.querySelectorAll(".day").forEach((c) => { c.checked = false; });
+      applyScheduleMode();
       $("submit-btn").textContent = "Sendung neu anlegen";
     }
 
@@ -655,18 +690,28 @@
         alert("Ungültige Endzeit. Bitte im Format HH:MM eingeben (z. B. 21:00).");
         return;
       }
-      const freq = getFrequency();
-      if (freq === "") {
-        alert("Bitte mindestens einen Wochentag auswählen.");
-        return;
-      }
       const id = $("id").value;
+      const once = currentScheduleMode() === "once";
+      const freq = getFrequency();
+      if (once) {
+        if (!$("schedule-date").value) {
+          alert("Bitte ein Datum für die einmalige Sendung angeben.");
+          return;
+        }
+      } else {
+        if (freq === "") {
+          alert("Bitte mindestens einen Wochentag auswählen.");
+          return;
+        }
+      }
       const payload = {
         title: $("title").value,
         station_id: $("station_id").value,
         start_time: startNorm,
         end_time: endNorm,
         frequency: freq,
+        one_off: once,
+        start_date: once ? $("schedule-date").value : null,
         audio_format: "mp3",
       };
       if (id) {

@@ -5,7 +5,8 @@ from typing import Optional
 # import asyncio
 from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore
 from apscheduler.triggers.cron import CronTrigger  # type: ignore
-from pendulum import DateTime, Duration, Time  # type: ignore
+from apscheduler.triggers.date import DateTrigger  # type: ignore
+from pendulum import DateTime, Duration  # type: ignore
 
 from src import utils
 from src.ffmpeg_recorder import is_active
@@ -65,10 +66,7 @@ class RecordingSchedulerService:
         next_run_time: Optional[DateTime] = None,
     ):
         try:
-            trigger = self._get_trigger(
-                recording_schedule.frequency,
-                recording_schedule.start_timeofday,
-            )
+            trigger = self._get_trigger(recording_schedule)
 
             add_kwargs = {
                 "func": self._execute_recording_task,
@@ -99,13 +97,17 @@ class RecordingSchedulerService:
         )
         return next_run_time_std_dt
 
-    # Gets trigger based on frequency
-    def _get_trigger(self, frequency: str, start_time: Time):
+    # Gets the trigger for a schedule. One-off schedules fire exactly once via
+    # DateTrigger; recurring schedules keep the cron (day-of-week) trigger.
+    def _get_trigger(self, recording_schedule: RecordingSchedule):
+        start = recording_schedule.one_off_start()
+        if start is not None:
+            return DateTrigger(run_date=start.naive(), timezone="UTC")
         return CronTrigger(
-            day_of_week=frequency,
-            hour=start_time.hour,
-            minute=start_time.minute,
-            second=start_time.second,
+            day_of_week=recording_schedule.frequency,
+            hour=recording_schedule.start_timeofday.hour,
+            minute=recording_schedule.start_timeofday.minute,
+            second=recording_schedule.start_timeofday.second,
             timezone="UTC",
         )
 
