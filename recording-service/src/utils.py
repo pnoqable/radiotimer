@@ -5,8 +5,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional, Type, TypeVar, Union, overload
 
 import pendulum
-from pendulum import DateTime, Duration, Period, Time  # type: ignore
-from pendulum.tz import timezone
+from pendulum import DateTime, Duration, Interval, Time  # type: ignore
 from pendulum.tz.timezone import Timezone
 
 logger = logging.getLogger(__name__)
@@ -48,7 +47,7 @@ def replace_time_in_datetime(dt: DateTime, time: Time) -> DateTime:
 def convert_time_to_utc(time: Time, from_time_zone: Timezone) -> Time:
     return (
         replace_time_in_datetime(pendulum.today(from_time_zone), time)
-        .astimezone(timezone("UTC"))
+        .astimezone(pendulum.timezone("UTC"))
         .time()
     )
 
@@ -63,17 +62,17 @@ def get_duration_btw_times(start_time_local: Time, end_time_local: Time) -> Dura
         # For this date, replace the time with the start and end time, but add a day to the end time, then calc duration
         start_dt = replace_time_in_datetime(dt=date, time=start_time_local)
         end_dt = replace_time_in_datetime(dt=date, time=end_time_local).add(days=1)
-        duration = start_dt.diff(end_dt).as_interval()
+        duration = start_dt.diff(end_dt).as_duration()
     return duration
 
 
 # ALWAYS use this to get current time.
 def get_utc_now() -> DateTime:
-    return pendulum.now(timezone("UTC"))
+    return pendulum.now(pendulum.timezone("UTC"))
 
 
 # A specific time period with a start and end datetime
-class TimePeriod(Period):
+class TimePeriod(Interval):
     @property
     def start(self) -> DateTime:
         return self._start  # type: ignore
@@ -96,7 +95,7 @@ class TimePeriod(Period):
     # Duration property
     @property
     def duration(self) -> Duration:
-        return self.as_interval()
+        return self.as_duration()
 
     # def change_start(self, new_start: DateTime) -> None:
     #     # Ensure new start is before end
@@ -107,7 +106,7 @@ class TimePeriod(Period):
     # Time until the start of the period
     def get_time_until_start(self, current_time: DateTime) -> Duration:
         if current_time < self.start:
-            return self.start.diff(current_time).as_interval()
+            return self.start.diff(current_time).as_duration()
         else:
             return Duration(seconds=0)
 
@@ -115,13 +114,13 @@ class TimePeriod(Period):
     def get_time_remaining(self, current_time: DateTime) -> Duration:
         # If not started yet, return duration
         if current_time < self.start:
-            return self.as_interval()
+            return self.as_duration()
         # If already expired, return 0
         elif current_time >= self.end:
             return Duration(seconds=0)
         # If in progress, return time remaining
         else:
-            return self.end.diff(current_time).as_interval()
+            return self.end.diff(current_time).as_duration()
 
 
 class TimeProvider:

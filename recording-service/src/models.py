@@ -9,7 +9,7 @@ from typing import Any, Optional
 import validators  # type: ignore
 from croniter import croniter
 import pendulum  # type: ignore
-from pendulum import Date, DateTime, Duration, Period, Time  # type: ignore
+from pendulum import Date, DateTime, Duration, Interval, Time  # type: ignore
 from typing_extensions import override
 
 from src import settings, utils

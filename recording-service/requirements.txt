@@ -1,6 +1,6 @@
 fastapi
 uvicorn
-pendulum>=2.1.2,<3
+pendulum>=3,<4
 apscheduler
 croniter
 python-slugify
