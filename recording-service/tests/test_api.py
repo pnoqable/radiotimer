@@ -483,6 +483,26 @@ def test_recordings_live_serves_static_when_not_recording(tmp_path, monkeypatch)
         assert res.content == b"hello"
 
 
+def test_recordings_play_suggests_download_name(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")
+    import main as m
+
+    rec = tmp_path / "BR Klassik" / "Classic Sounds in Jazz" / "2026-08-26 19-05.mp3"
+    rec.parent.mkdir(parents=True)
+    rec.write_bytes(b"data")
+    rel = rec.relative_to(tmp_path).as_posix()
+
+    with TestClient(m.app) as client:
+        res = client.get("/api/recordings/play?path=" + urllib.parse.quote(rel))
+        assert res.status_code == 200
+        cd = res.headers["content-disposition"]
+        # The name mirrors the podcast title: file stem + folder parts reversed
+        # (RFC 5987-encoded spaces/commas in the filename*= form).
+        assert cd.startswith("inline")
+        assert "2026-08-26%2019-05%20Classic%20Sounds%20in%20Jazz%2C%20BR%20Klassik.mp3" in cd
+
+
 def test_recordings_live_rejects_traversal(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
     monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")
