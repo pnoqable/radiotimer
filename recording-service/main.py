@@ -148,6 +148,44 @@ def _rfc822(dt: datetime) -> str:
     return dt.strftime("%a, %d %b %Y %H:%M:%S %z")
 
 
+def _episode_title(rel: str) -> str:
+    """Human-readable title for an episode, from its path relative to OUTPUT_DIR.
+
+    The file name (e.g. "2026-08-23 18-23") is followed by the path components
+    (station, show, ...) in reverse order, so a file at
+    "Bayern 2 Süd/Test/2026-08-23 18-23.mp3" becomes
+    "2026-08-23 18-23 Test Bayern 2 Süd". Used for the podcast feed titles and
+    for the download file name.
+    """
+    parts = rel.split("/")
+    stem = parts[-1].rsplit(".", 1)[0]
+    folder_parts = parts[:-1]
+    title = stem
+    if folder_parts:
+        title = title + " " + ", ".join(reversed(folder_parts))
+    return title
+
+
+def _download_name(target: Path) -> str:
+    """A sensible download file name for a recording (mirrors the podcast title,
+    keeps the audio extension), e.g. "2026-08-26 19-05 Classic Sounds in Jazz,
+    BR Klassik.mp3". Replaces characters that are awkward in file names."""
+    base = settings.OUTPUT_DIR.resolve()
+    rel = target.relative_to(base).as_posix()
+    name = _episode_title(rel) + target.suffix
+    return re.sub(r'[\\/:*?"<>|]', "_", name) or target.name
+
+
+def _inline_disposition(filename: str) -> str:
+    """RFC 5987-encoded Content-Disposition header for an inline (not attachment)
+    response, so right-click "Save as" proposes ``filename`` while the browser
+    can still play the stream inline. Mirrors Starlette's FileResponse encoding."""
+    quoted = urllib.parse.quote(filename)
+    if quoted != filename:
+        return f"inline; filename*=utf-8''{quoted}"
+    return f'inline; filename="{filename}"'
+
+
 def _build_podcast_feed(folder_rel: str, request: Request) -> str:
     """Build an RSS 2.0 podcast feed for all audio files under ``folder_rel``.
 
@@ -172,15 +210,11 @@ def _build_podcast_feed(folder_rel: str, request: Request) -> str:
         if not entry.is_file() or entry.suffix.lower() not in _AUDIO_EXTS:
             continue
         rel = entry.relative_to(base).as_posix()
-        parts = rel.split("/")
         # Episode title: the file name (e.g. "2026-08-23 18-23") followed by the
         # path components (station, show, ...) in reverse order, so a file at
         # "Bayern 2 Süd/Test/2026-08-23 18-23.mp3" becomes
         # "2026-08-23 18-23 Test Bayern 2 Süd".
-        folder_parts = parts[:-1]
-        title = entry.stem
-        if folder_parts:
-            title = title + " " + ", ".join(reversed(folder_parts))
+        title = _episode_title(rel)
         media_type = mimetypes.guess_type(str(entry))[0] or "application/octet-stream"
         enc_url = public + "/api/recordings/play?path=" + urllib.parse.quote(rel)
         items.append(
@@ -544,10 +578,15 @@ def api_recordings_play(path: str = Query(...)):
         return StreamingResponse(
             iter_live_file(target),
             media_type=media_type,
+            headers={"Content-Disposition": _inline_disposition(_download_name(target))},
         )
 
     if target.is_file():
-        return FileResponse(target)
+        return FileResponse(
+            target,
+            content_disposition_type="inline",
+            filename=_download_name(target),
+        )
     raise HTTPException(status_code=404, detail="Not found")
 
 
