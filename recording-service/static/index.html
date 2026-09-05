@@ -227,6 +227,30 @@
       do { v /= 1024; i++; } while (v >= 1024 && i < units.length - 1);
       return v.toFixed(v >= 10 || i === 0 ? 0 : 1) + " " + units[i];
     }
+    let playerWin = null;
+    let playerResizeTimer = null;
+    function playerSize() {
+      try {
+        const s = localStorage.getItem("player.size");
+        if (s) {
+          const [w, h] = s.split("x").map(Number);
+          if (w && h) return [w, h];
+        }
+      } catch (e) {}
+      return [600, 200];
+    }
+    function openPlayer(href) {
+      const [w, h] = playerSize();
+      playerWin = window.open(href, "player", `width=${w},height=${h}`);
+      clearInterval(playerResizeTimer);
+      playerResizeTimer = setInterval(() => {
+        if (!playerWin || playerWin.closed) { clearInterval(playerResizeTimer); return; }
+        const key = playerWin.innerWidth + "x" + playerWin.innerHeight;
+        let cur = null;
+        try { cur = localStorage.getItem("player.size"); } catch (e) {}
+        if (cur !== key) { try { localStorage.setItem("player.size", key); } catch (e) {} }
+      }, 1000);
+    }
     async function loadDisk() {
       try {
         const d = await (await fetch("/api/disk")).json();
@@ -398,7 +422,7 @@
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>${s.name}</td>
-          <td><a href="/api/stations/${s.id}/open" class="url-link icon-btn" onclick="window.open(this.href,'player','width=600,height=200');return false;" title="Stream öffnen">${icon('player')} ${s.url}</a></td>
+          <td><a href="/api/stations/${s.id}/open" class="url-link icon-btn" onclick="openPlayer(this.href);return false;" title="Stream öffnen">${icon('player')} ${s.url}</a></td>
           <td><a href="javascript:void(0)" class="url-link icon-btn" data-edit="${s.id}" title="Bearbeiten">${icon('edit')}</a><a href="javascript:void(0)" class="del-link icon-btn" data-del="${s.id}" title="Löschen">${icon('trash')}</a></td>`;
         tb.appendChild(tr);
         const opt = document.createElement("option");
@@ -498,7 +522,7 @@
           // Play button moves to the end of the row. When the live URL is not
           // available yet, show a disabled (greyed) play icon without a link.
           actionCell = liveUrls.has(r.id)
-            ? `<a href="${liveUrls.get(r.id)}" class="url-link icon-btn" onclick="window.open(this.href,'player','width=600,height=200');return false;" title="Live abspielen">${icon('player')}</a>`
+            ? `<a href="${liveUrls.get(r.id)}" class="url-link icon-btn" onclick="openPlayer(this.href);return false;" title="Live abspielen">${icon('player')}</a>`
             : `<span class="icon-btn muted" title="Live-Wiedergabe noch nicht verfügbar">${icon('player')}</span>`;
         } else {
           actionCell = `<a href="javascript:void(0)" class="del-link icon-btn" data-del="${r.id}" title="Löschen">${icon('trash')}</a>`;
@@ -662,7 +686,7 @@
         row.dataset.path = node.path;
         const size = node.size ? (node.size / 1024 / 1024).toFixed(2) + " MB" : "";
         row.innerHTML = `
-          <a href="${node.url}" class="url-link icon-btn" onclick="window.open(this.href,'player','width=600,height=200');return false;">${icon('player')} ${node.name}</a>
+          <a href="${node.url}" class="url-link icon-btn" onclick="openPlayer(this.href);return false;">${icon('player')} ${node.name}</a>
           <span class="muted">(<span class="size">${size}</span>)</span>
           ${node.live ? liveIcon() : `<a href="javascript:void(0)" class="del-link icon-btn" data-del="${node.path}" title="Löschen">${icon('trash')}</a>`}
           `;
