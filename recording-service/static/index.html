@@ -14,7 +14,7 @@
     form label { display: flex; flex-direction: column; font-size: .8rem; }
     input, select { padding: .35rem; }
     input.invalid { border: 1px solid #c33; background: #fff0f0; }
-    .days { grid-column: 1 / -1; display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; border: 1px solid #8884; border-radius: 6px; padding: .5rem .75rem; margin: 0; }
+    .days { grid-column: 1 / -1; display: flex; flex-direction: column; gap: .3rem; align-items: flex-start; border: 1px solid #8884; border-radius: 6px; padding: .5rem .75rem; margin: 0; }
     .days legend { font-size: .8rem; padding: 0 .25rem; }
     .days label { flex-direction: row; font-size: .8rem; gap: .25rem; }
     button { padding: .4rem .8rem; cursor: pointer; }
@@ -33,8 +33,33 @@
     details.section > summary.section-title {
       font-size: 1.3rem; font-weight: 600; cursor: pointer;
       margin: 0 0 .5rem; list-style: none;
+      display: flex; align-items: center; justify-content: space-between; gap: .75rem;
     }
     details.section > summary.section-title::-webkit-details-marker { display: none; }
+    /* "Neu anlegen" button inside the section header. */
+    .new-btn { font-size: .85rem; padding: .25rem .6rem; }
+    /* Flyout dialogs for creating/editing stations and schedules. */
+    dialog.flyout {
+      position: fixed; top: 0; right: 0; bottom: 0; left: auto;
+      width: min(420px, 92vw); max-width: none; max-height: none;
+      height: auto; margin: 0; padding: 0; border: none; border-left: 1px solid #8886;
+      border-radius: 0; background: Canvas; color: CanvasText;
+      display: none;
+    }
+    dialog.flyout::backdrop { background: #0007; }
+    dialog.flyout[open] { display: flex; flex-direction: column; animation: flyout-in .18s ease-out; }
+    @keyframes flyout-in {
+      from { transform: translateX(100%); }
+      to { transform: translateX(0); }
+    }
+    dialog.flyout .flyout-header {
+      display: flex; align-items: center; justify-content: space-between; gap: .75rem;
+      padding: .9rem 1.1rem; border-bottom: 1px solid #8884;
+    }
+    dialog.flyout .flyout-header h2 { margin: 0; font-size: 1.1rem; }
+    dialog.flyout .flyout-body { padding: 1.1rem; overflow-y: auto; flex: 1; }
+    dialog.flyout form { grid-template-columns: 1fr; margin-top: 0; }
+    dialog.flyout .form-actions { display: flex; gap: .5rem; margin-top: .75rem; }
     /* Green dot indicating a recording that is currently running. */
     .file-row { display: flex; gap: .5rem; align-items: center; padding: .15rem 0 0 1.5rem; }
     .del-link { color: #c33; text-decoration: none; cursor: pointer; }
@@ -105,52 +130,19 @@
   <div class="layout">
     <div class="col-left">
       <details class="section" open id="sec-stations">
-        <summary class="section-title">Sender</summary>
+        <summary class="section-title"><span>Sender</span><button type="button" class="new-btn" id="station-new">Neu anlegen</button></summary>
         <table id="stations">
           <thead><tr><th>Name</th><th>URL</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
-        <form id="station-form">
-          <input type="hidden" id="station-id" />
-          <label>Name<input id="station-name" required /></label>
-          <label>Stream/Playlist-URL<input id="station-url" required /></label>
-          <button type="submit" id="station-submit">Sender neu anlegen</button>
-          <button type="button" id="station-reset">Abbrechen</button>
-        </form>
       </details>
 
       <details class="section" open id="sec-schedules">
-        <summary class="section-title">Sendungen</summary>
+        <summary class="section-title"><span>Sendungen</span><button type="button" class="new-btn" id="schedule-new">Neu anlegen</button></summary>
         <table id="schedules">
           <thead><tr><th>Titel</th><th>Sender</th><th>Zeit</th><th>Tage</th><th>Status</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
-        <form id="schedule-form">
-          <input type="hidden" id="id" />
-          <label>Titel<input id="title" required /></label>
-          <label>Sender<select id="station_id" required></select></label>
-          <label>Start (HH:MM)<input id="start_time" required /></label>
-          <label>Ende (HH:MM)<input id="end_time" required /></label>
-          <label>Wiederholung
-            <select id="schedule-mode">
-              <option value="once">Einmalig</option>
-              <option value="recurring">Wöchentlich</option>
-            </select>
-          </label>
-          <label id="once-date-wrap" style="display:none;">Datum<input type="date" id="schedule-date" /></label>
-          <fieldset class="days" id="days-fieldset">
-            <legend>Wochentage</legend>
-            <label><input type="checkbox" class="day" value="mon" />Montags</label>
-            <label><input type="checkbox" class="day" value="tue" />Dienstags</label>
-            <label><input type="checkbox" class="day" value="wed" />Mittwochs</label>
-            <label><input type="checkbox" class="day" value="thu" />Donnerstags</label>
-            <label><input type="checkbox" class="day" value="fri" />Freitags</label>
-            <label><input type="checkbox" class="day" value="sat" />Samstags</label>
-            <label><input type="checkbox" class="day" value="sun" />Sonntags</label>
-          </fieldset>
-          <button type="submit" id="submit-btn">Sendung neu anlegen</button>
-          <button type="button" id="reset-btn">Abbrechen</button>
-        </form>
       </details>
     </div>
 
@@ -162,6 +154,61 @@
       </details>
     </div>
   </div>
+
+  <dialog class="flyout" id="station-dialog">
+    <header class="flyout-header">
+      <h2 id="station-dialog-title">Sender</h2>
+      <button type="button" class="new-btn" id="station-close" title="Schließen">✕</button>
+    </header>
+    <div class="flyout-body">
+      <form id="station-form">
+        <input type="hidden" id="station-id" />
+        <label>Name<input id="station-name" required /></label>
+        <label>Stream/Playlist-URL<input id="station-url" required /></label>
+        <div class="form-actions">
+          <button type="submit" id="station-submit">Sender neu anlegen</button>
+          <button type="button" id="station-reset">Abbrechen</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog class="flyout" id="schedule-dialog">
+    <header class="flyout-header">
+      <h2 id="schedule-dialog-title">Sendung</h2>
+      <button type="button" class="new-btn" id="schedule-close" title="Schließen">✕</button>
+    </header>
+    <div class="flyout-body">
+      <form id="schedule-form">
+        <input type="hidden" id="id" />
+        <label>Titel<input id="title" required /></label>
+        <label>Sender<select id="station_id" required></select></label>
+        <label>Start (HH:MM)<input id="start_time" required /></label>
+        <label>Ende (HH:MM)<input id="end_time" required /></label>
+        <label>Wiederholung
+          <select id="schedule-mode">
+            <option value="once">Einmalig</option>
+            <option value="recurring">Wöchentlich</option>
+          </select>
+        </label>
+        <label id="once-date-wrap" style="display:none;">Datum<input type="date" id="schedule-date" /></label>
+        <fieldset class="days" id="days-fieldset">
+          <legend>Wochentage</legend>
+          <label><input type="checkbox" class="day" value="mon" />Montags</label>
+          <label><input type="checkbox" class="day" value="tue" />Dienstags</label>
+          <label><input type="checkbox" class="day" value="wed" />Mittwochs</label>
+          <label><input type="checkbox" class="day" value="thu" />Donnerstags</label>
+          <label><input type="checkbox" class="day" value="fri" />Freitags</label>
+          <label><input type="checkbox" class="day" value="sat" />Samstags</label>
+          <label><input type="checkbox" class="day" value="sun" />Sonntags</label>
+        </fieldset>
+        <div class="form-actions">
+          <button type="submit" id="submit-btn">Sendung neu anlegen</button>
+          <button type="button" id="reset-btn">Abbrechen</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
 
   <script>
     const $ = (id) => document.getElementById(id);
@@ -369,13 +416,43 @@
       $("station-name").value = s.name;
       $("station-url").value = s.url;
       $("station-submit").textContent = "Änderungen speichern";
+      $("station-dialog-title").textContent = "Sender bearbeiten";
+      $("station-dialog").showModal();
     }
 
     function resetStationForm() {
       $("station-form").reset();
       $("station-id").value = "";
       $("station-submit").textContent = "Sender neu anlegen";
+      $("station-dialog-title").textContent = "Sender";
     }
+
+    function openStationDialog() {
+      resetStationForm();
+      $("station-dialog").showModal();
+    }
+
+    function closeStationDialog() {
+      $("station-dialog").close();
+    }
+
+    $("station-new").addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openStationDialog();
+    });
+    $("station-close").addEventListener("click", closeStationDialog);
+
+    function closeOnBackdropClick(dialog) {
+      dialog.addEventListener("click", (e) => {
+        if (!dialog.open) return;
+        const r = dialog.getBoundingClientRect();
+        if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) {
+          dialog.close();
+        }
+      });
+    }
+    closeOnBackdropClick($("station-dialog"));
 
     async function delStation(id) {
       if (!confirm("Sender löschen? (Nur möglich, wenn keine Sendung ihn nutzt)")) return;
@@ -391,18 +468,17 @@
       e.preventDefault();
       const id = $("station-id").value;
       const payload = { name: $("station-name").value, url: $("station-url").value };
-      if (id) {
-        await fetch("/api/stations/" + id, { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
-      } else {
-        const res = await fetch("/api/stations", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
-        if (res.ok) {
-          const created = await res.json();
-          $("station-id").value = created.id;
-          $("station-submit").textContent = "Änderungen speichern";
-        }
+      const method = id ? "PUT" : "POST";
+      const url = id ? "/api/stations/" + id : "/api/stations";
+      const res = await fetch(url, { method, headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert("Konnte Sender nicht speichern: " + (err.detail || res.status));
+        return;
       }
+      closeStationDialog();
     };
-    $("station-reset").onclick = resetStationForm;
+    $("station-reset").onclick = closeStationDialog;
 
     async function loadSchedules() {
       const rows = await (await fetch("/api/schedules")).json();
@@ -631,6 +707,8 @@
       $("start_time").classList.remove("invalid");
       $("end_time").classList.remove("invalid");
       $("submit-btn").textContent = "Änderungen speichern";
+      $("schedule-dialog-title").textContent = "Sendung bearbeiten";
+      $("schedule-dialog").showModal();
     }
 
     function resetScheduleForm() {
@@ -644,7 +722,25 @@
       document.querySelectorAll(".day").forEach((c) => { c.checked = false; });
       applyScheduleMode();
       $("submit-btn").textContent = "Sendung neu anlegen";
+      $("schedule-dialog-title").textContent = "Sendung";
     }
+
+    function openScheduleDialog() {
+      resetScheduleForm();
+      $("schedule-dialog").showModal();
+    }
+
+    function closeScheduleDialog() {
+      $("schedule-dialog").close();
+    }
+
+    $("schedule-new").addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openScheduleDialog();
+    });
+    $("schedule-close").addEventListener("click", closeScheduleDialog);
+    closeOnBackdropClick($("schedule-dialog"));
 
     async function delSchedule(id) {
       if (!confirm("Sendung löschen?")) return;
@@ -714,19 +810,18 @@
         start_date: once ? $("schedule-date").value : null,
         audio_format: "mp3",
       };
-      if (id) {
-        await fetch("/api/schedules/" + id, { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
-      } else {
-        const res = await fetch("/api/schedules", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
-        if (res.ok) {
-          const created = await res.json();
-          $("id").value = created.id;
-          $("submit-btn").textContent = "Änderungen speichern";
-        }
+      const method = id ? "PUT" : "POST";
+      const url = id ? "/api/schedules/" + id : "/api/schedules";
+      const res = await fetch(url, { method, headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert("Konnte Sendung nicht speichern: " + (err.detail || res.status));
+        return;
       }
+      closeScheduleDialog();
     };
 
-    $("reset-btn").onclick = resetScheduleForm;
+    $("reset-btn").onclick = closeScheduleDialog;
 
     resetStationForm();
     resetScheduleForm();
