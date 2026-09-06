@@ -539,6 +539,10 @@ def test_podcast_feed_lists_recordings(tmp_path, monkeypatch):
         assert urllib.parse.quote(rel) in body
         # Episode title joins the file name with the folder parts in reverse.
         assert "2026-08-10 23-05 Jazz, BR" in body
+        # The channel advertises the dedicated podcast cover image.
+        assert "http://example.com/static/radiotimer.png" in body
+        assert '<itunes:image href="http://example.com/static/radiotimer.png"/>' in body
+        assert "<image>" in body and "</image>" in body
 
 
 def test_podcast_feed_rejects_traversal(tmp_path, monkeypatch):

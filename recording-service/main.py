@@ -246,6 +246,7 @@ def _build_podcast_feed(folder_rel: str, request: Request) -> str:
     items.sort(key=lambda i: i["pub"], reverse=True)
 
     title = folder_rel.strip("/").split("/")[-1] or "Aufnahmen"
+    image_url = public + "/static/radiotimer.png"
     esc = _xml_escape.escape
     item_xml = []
     for it in items:
@@ -269,6 +270,12 @@ def _build_podcast_feed(folder_rel: str, request: Request) -> str:
         f"    <link>{esc(feed_url)}</link>\n"
         f"    <description>Aufnahmen aus {esc(folder_rel or '/')}</description>\n"
         "    <language>de</language>\n"
+        f"    <image>\n"
+        f"      <url>{esc(image_url)}</url>\n"
+        f"      <title>{esc(title)}</title>\n"
+        f"      <link>{esc(feed_url)}</link>\n"
+        "    </image>\n"
+        f'    <itunes:image href="{esc(image_url)}"/>\n'
         f"    <lastBuildDate>{_rfc822(pendulum.now(pendulum.timezone(settings.TIME_ZONE)))}</lastBuildDate>\n"
         f"{items_block}\n"
         "  </channel>\n"
