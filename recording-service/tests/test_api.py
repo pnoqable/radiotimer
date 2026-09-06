@@ -307,6 +307,31 @@ def test_reload_job_keeps_recording_when_still_in_window(tmp_path, monkeypatch):
     fr._active.pop(sched["id"], None)
 
 
+def test_recordings_tree_sorts_folders_up_files_down(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")
+    import main as m
+
+    # Files carry a timestamp prefix, folders do not.
+    files = [
+        "2026-09-01 10-00 A.mp3",
+        "2026-09-12 08-30 B.mp3",
+        "2026-07-20 20-15 C.mp3",
+    ]
+    folders = ["Zulu", "alpha", "Beta"]
+    for f in files:
+        (tmp_path / f).write_bytes(b"x")
+    for d in folders:
+        (tmp_path / d).mkdir()
+
+    with TestClient(m.app) as client:
+        children = client.get("/api/recordings").json()["tree"]["children"]
+    names = [c["name"] for c in children]
+
+    assert names[:3] == ["alpha", "Beta", "Zulu"]  # folders ascending
+    assert names[3:] == sorted(files, reverse=True)  # files descending (newest first)
+
+
 def test_recordings_tree_marks_live_file(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
     monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")
