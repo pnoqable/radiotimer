@@ -106,6 +106,31 @@ def test_one_off_uses_date_trigger(tmp_path):
     assert isinstance(svc._get_trigger(once), DateTrigger)
 
 
+def test_recurring_trigger_uses_local_timezone(tmp_path):
+    from apscheduler.triggers.cron import CronTrigger
+
+    svc = _svc()
+
+    monday_night = RecordingSchedule(
+        title="T",
+        station_name="S",
+        station_url="http://example.com/stream.m3u",
+        start_timeofday=pendulum.time(23, 30),  # UTC-shifted time (old behaviour)
+        duration=pendulum.duration(hours=1),
+        audio_format="mp3",
+        output_dir=tmp_path,
+        frequency="mon",
+        start_time_local=pendulum.time(1, 30),  # local wall-clock time wins
+    )
+    tr = svc._get_trigger(monday_night)
+    assert isinstance(tr, CronTrigger)
+    # The cron runs in the local zone at 01:30, so Monday 01:30 Berlin fires
+    # at Sunday 23:30 UTC during summer (CEST) instead of a UTC-shifted time.
+    assert str(tr.timezone) == "Europe/Berlin"
+    ur = tr.get_next_fire_time(None, pendulum.datetime(2026, 7, 1, tz="UTC"))
+    assert ur == pendulum.datetime(2026, 7, 5, 23, 30, 0, tz="UTC")
+
+
 def test_active_schedule_is_not_started_again(tmp_path, monkeypatch):
     fixed = pendulum.datetime(2026, 1, 2, 20, 30, 0, tz="UTC")
     monkeypatch.setattr(utils, "get_utc_now", lambda: fixed)

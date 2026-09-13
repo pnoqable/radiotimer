@@ -123,20 +123,63 @@ class RecordingSchedule:
     one_off: bool = False
     start_date: Optional[str] = None
 
+    # Local wall-clock start time as entered in the UI (HH:MM). Used to
+    # reconstruct the absolute one-off start on `start_date`: the stored UTC
+    # `start_timeofday` alone is ambiguous across the UTC/local midnight
+    # boundary (e.g. 01:30 Berlin = 23:30 UTC on the previous day).
+    start_time_local: Optional[Time] = None
+
     @property
     def end_timeofday(self) -> Time:
         return self.start_timeofday.add(seconds=self.duration.in_seconds())
 
+    # Wall-clock start time and timezone to feed the recurring cron trigger and
+    # the croniter window matching. Schedules built from the DB carry the local
+    # wall-clock start time (start_time_local); their cron fires at that LOCAL
+    # time, so DST shifts and the UTC/local midnight boundary (e.g. Monday
+    # 01:30 Berlin = Sunday 23:30 UTC) are handled by the timezone. Schedules
+    # without it (legacy / directly constructed) keep the UTC wall-clock time.
+    def cron_start(self) -> tuple[Time, str]:
+        if self.start_time_local is not None:
+            return self.start_time_local, settings.TIME_ZONE
+        return self.start_timeofday, "UTC"
+
     # Converts the schedule frequency to a cron expression
     @property
     def cron_expression(self) -> str:
-        return f"{self.start_timeofday.minute} {self.start_timeofday.hour} * * {self.frequency}"
+        start, _ = self.cron_start()
+        return f"{start.minute} {start.hour} * * {self.frequency}"
 
     # Absolute UTC start instant for a one-off schedule (else None).
     def one_off_start(self) -> Optional[DateTime]:
+        return self._one_off_start_utc()
+
+    # Absolute UTC start instant for a one-off schedule, used wherever the
+    # window must be resolved (trigger scheduling and the "is it due now?"
+    # checks). Returns None for recurring schedules.
+    def _one_off_start_utc(self) -> Optional[DateTime]:
         if not (self.one_off and self.start_date):
             return None
         y, mo, d = (int(p) for p in self.start_date.split("-"))
+        if self.start_time_local is not None:
+            # `start_date` is a local calendar date and `start_time_local` the
+            # local wall-clock time. Build the instant in the local zone and
+            # convert to UTC, so a start before the local midnight boundary
+            # (e.g. 01:30 Berlin = 23:30 UTC the previous day) lands on the
+            # correct UTC day.
+            start = pendulum.datetime(
+                y,
+                mo,
+                d,
+                self.start_time_local.hour,
+                self.start_time_local.minute,
+                self.start_time_local.second,
+                tz=settings.TIME_ZONE,
+            )
+            return start.astimezone(pendulum.timezone("UTC"))
+        # Legacy schedules (built before start_time_local existed): the stored
+        # start_timeofday is already a UTC wall-clock time; combine it with the
+        # local date as if it were a UTC date.
         return pendulum.datetime(
             y, mo, d,
             self.start_timeofday.hour,
@@ -175,55 +218,52 @@ class RecordingSchedule:
         )
 
     def resolve_recording_period(self, recording_start_time: DateTime) -> TimePeriod:
-        if self.one_off and self.start_date:
-            # Single occurrence: [start_date @ start_timeofday, +duration) in
-            # UTC, mirroring how the recurring cron fires at start_timeofday.
-            y, mo, d = (int(p) for p in self.start_date.split("-"))
-            start = pendulum.datetime(
-                y, mo, d,
-                self.start_timeofday.hour,
-                self.start_timeofday.minute,
-                self.start_timeofday.second,
-                tz="UTC",
+        one_off_start = self._one_off_start_utc()
+        if one_off_start is not None:
+            # Single occurrence: a single fixed window in UTC, mirroring how
+            # the one-off DateTrigger fires at one_off_start().
+            return TimePeriod(
+                start=one_off_start,
+                end=one_off_start + self.duration.as_timedelta(),
             )
-            end = start + self.duration.as_timedelta()
-            return TimePeriod(start=start, end=end)
 
         # Find the recording window (start, start+duration) that contains the
-        # given time. croniter's get_prev/get_next are exclusive of an exact
-        # match, so at the precise fire time (second 0, as produced by the
-        # cron trigger) they would both skip the current day and return
-        # yesterday and tomorrow. Detect an exact match first, otherwise a
-        # recording that starts right at its scheduled time would resolve to
-        # the next day and wait ~24h before actually recording.
+        # given time, resolving the cron in the same zone the trigger uses
+        # (local wall-clock time when available, UTC otherwise) so that DST
+        # shifts and the UTC/local midnight boundary are handled correctly.
+        # croniter's get_prev/get_next are exclusive of an exact match, so at
+        # the precise fire time (second 0, as produced by the cron trigger)
+        # they would both skip the current day and return yesterday and
+        # tomorrow. Detect an exact match first, otherwise a recording that
+        # starts right at its scheduled time would resolve to the next day and
+        # wait ~24h before actually recording.
+        start_local_time, tz_name = self.cron_start()
+        tz = pendulum.timezone(tz_name)
+        expr = self.cron_expression
         duration = self.duration.as_timedelta()
-        cron = croniter(self.cron_expression, start_time=recording_start_time)
-        fire_time = recording_start_time.replace(second=0, microsecond=0)
+
+        now_local = recording_start_time.in_tz(tz)
+        fire_time_local = now_local.replace(second=0, microsecond=0)
         # croniter.match is a classmethod here; it honours the day-of-week too.
-        if croniter.match(self.cron_expression, fire_time):
-            return TimePeriod(start=fire_time, end=fire_time + duration)
-
-        # Get prev recording period based on cron expression (as we may be within the prev recording period)
-        prev_start_time: DateTime = cron.get_prev(datetime)
-
-        prev_end_time: DateTime = prev_start_time + duration
-
-        # Check if we are still within the prev recording period
-        if prev_start_time <= recording_start_time < prev_end_time:
-            # If recording has been started before the end of the previous recording period, we are still within the previous recording period
-            logger.debug(
-                f"Schedule '{self.title}': Recording has been started during previous recording period"
-            )
-            return TimePeriod(
-                start=prev_start_time,
-                end=prev_end_time,
-            )
+        if croniter.match(expr, fire_time_local):
+            start_utc = fire_time_local.in_tz("UTC")
         else:
-            # Get next recording period based on cron expression
-            next_start_time: DateTime = cron.get_next(datetime)
-            next_end_time: DateTime = next_start_time + duration
+            # croniter returns naive datetimes even for aware inputs; they
+            # already hold the local wall-clock time, so re-attach the zone.
+            cron = croniter(expr, start_time=now_local)
+            prev_start_local = pendulum.instance(cron.get_prev(datetime), tz=tz)
 
-            return TimePeriod(
-                start=next_start_time,
-                end=next_end_time,
-            )
+            # Check if we are still within the prev recording period
+            if prev_start_local <= now_local < prev_start_local + duration:
+                # Recording has been started during the previous period (e.g.
+                # the app was restarted while a recording was active).
+                logger.debug(
+                    f"Schedule '{self.title}': Recording has been started during previous recording period"
+                )
+                start_utc = prev_start_local.in_tz("UTC")
+            else:
+                start_utc = pendulum.instance(
+                    cron.get_next(datetime), tz=tz
+                ).in_tz("UTC")
+
+        return TimePeriod(start=start_utc, end=start_utc + duration)

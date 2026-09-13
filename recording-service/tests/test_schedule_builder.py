@@ -92,6 +92,98 @@ def test_build_schedule_one_off_window(monkeypatch, tmp_path):
     )
 
 
+def test_build_schedule_one_off_crossing_utc_midnight_cest(monkeypatch, tmp_path):
+    # A one-off between 00:00-02:00 Berlin converts to a UTC time on the
+    # PREVIOUS day. It must fire on the correct day (bug: it fired 24h late
+    # because the local start date was combined with the shifted UTC time).
+    monkeypatch.setattr(settings, "TIME_ZONE", "Europe/Berlin")
+    monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
+
+    row = {
+        "id": str(uuid.uuid4()),
+        "title": "Nachtausgabe",
+        "station_name": "DLF",
+        "station_url": "http://example.com/stream.m3u",
+        "start_time": "01:30",
+        "end_time": "02:00",
+        "frequency": "",
+        "audio_format": "mp3",
+        "one_off": True,
+        "start_date": "2026-09-13",  # CEST (UTC+2)
+    }
+    schedule = schedule_builder.build_schedule(row)
+
+    # 01:30 Berlin on Sep 13 == 23:30 UTC on Sep 12.
+    expected = pendulum.datetime(2026, 9, 12, 23, 30, 0, tz="UTC")
+    assert schedule.one_off_start() == expected
+    period = schedule.resolve_recording_period(pendulum.now("UTC"))
+    assert period.start == expected
+    assert period.end == pendulum.datetime(2026, 9, 13, 0, 0, 0, tz="UTC")
+
+
+def test_build_schedule_one_off_crossing_utc_midnight_cet(monkeypatch, tmp_path):
+    # Same, but in winter (CET, UTC+1): 01:30 Berlin == 00:30 UTC the same day.
+    monkeypatch.setattr(settings, "TIME_ZONE", "Europe/Berlin")
+    monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
+
+    row = {
+        "id": str(uuid.uuid4()),
+        "title": "Nachtausgabe",
+        "station_name": "DLF",
+        "station_url": "http://example.com/stream.m3u",
+        "start_time": "01:30",
+        "end_time": "02:00",
+        "frequency": "",
+        "audio_format": "mp3",
+        "one_off": True,
+        "start_date": "2026-01-10",  # CET (UTC+1)
+    }
+    schedule = schedule_builder.build_schedule(row)
+
+    expected = pendulum.datetime(2026, 1, 10, 0, 30, 0, tz="UTC")
+    assert schedule.one_off_start() == expected
+    assert schedule.resolve_recording_period(pendulum.now("UTC")).start == expected
+
+
+def test_build_schedule_recurring_cron_uses_local_timezone(monkeypatch, tmp_path):
+    # Recurring schedules must fire at the LOCAL wall-clock time. A start that
+    # crosses the UTC/local midnight boundary (e.g. Monday 01:30 Berlin) must
+    # land on the correct UTC day, and DST is applied per fire date (not at the
+    # date the schedule was created).
+    monkeypatch.setattr(settings, "TIME_ZONE", "Europe/Berlin")
+    monkeypatch.setattr(settings, "OUTPUT_DIR", tmp_path)
+
+    row = {
+        "id": str(uuid.uuid4()),
+        "title": "Nachtausgabe",
+        "station_name": "DLF",
+        "station_url": "http://example.com/stream.m3u",
+        "start_time": "01:30",
+        "end_time": "02:00",
+        "frequency": "mon",
+        "audio_format": "mp3",
+    }
+    schedule = schedule_builder.build_schedule(row)
+
+    # The cron fires at 01:30 in the local zone, not at the UTC-shifted time.
+    assert schedule.cron_start() == (pendulum.time(1, 30), "Europe/Berlin")
+    assert schedule.cron_expression == "30 1 * * mon"
+
+    # Monday 01:30 Berlin = Sunday 23:30 UTC in summer (CEST).
+    summer = pendulum.datetime(2026, 7, 5, 23, 30, 0, tz="UTC")  # Sun 23:30 UTC
+    period = schedule.resolve_recording_period(summer)
+    assert period.start == summer
+    assert period.end == pendulum.datetime(2026, 7, 6, 0, 0, 0, tz="UTC")
+
+    # A restart mid-window resolves to the window in progress.
+    inside = pendulum.datetime(2026, 7, 5, 23, 45, 0, tz="UTC")
+    assert schedule.resolve_recording_period(inside).start == summer
+
+    # In winter the same wall clock is CET: Monday 01:30 Berlin = 00:30 UTC.
+    winter = pendulum.datetime(2026, 1, 5, 0, 30, 0, tz="UTC")  # Mon 00:30 UTC
+    assert schedule.resolve_recording_period(winter).start == winter
+
+
 def test_recording_task_path_uses_pattern(monkeypatch, tmp_path):
     # Adopted from the old "VLC Timer": <station>/<title>/<date> <HH-MM>.mp3
     monkeypatch.setattr(settings, "PATTERN", "{station}/{title}/{date} {start_hm}.{ext}")

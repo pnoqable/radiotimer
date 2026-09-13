@@ -98,17 +98,20 @@ class RecordingSchedulerService:
         return next_run_time_std_dt
 
     # Gets the trigger for a schedule. One-off schedules fire exactly once via
-    # DateTrigger; recurring schedules keep the cron (day-of-week) trigger.
+    # DateTrigger; recurring schedules keep the cron (day-of-week) trigger in
+    # the schedule's wall-clock timezone so DST and the UTC/local midnight
+    # boundary are handled correctly.
     def _get_trigger(self, recording_schedule: RecordingSchedule):
         start = recording_schedule.one_off_start()
         if start is not None:
             return DateTrigger(run_date=start.naive(), timezone="UTC")
+        start_time, tz = recording_schedule.cron_start()
         return CronTrigger(
             day_of_week=recording_schedule.frequency,
-            hour=recording_schedule.start_timeofday.hour,
-            minute=recording_schedule.start_timeofday.minute,
-            second=recording_schedule.start_timeofday.second,
-            timezone="UTC",
+            hour=start_time.hour,
+            minute=start_time.minute,
+            second=start_time.second,
+            timezone=tz,
         )
 
     async def _execute_recording_task(self, recording_schedule: RecordingSchedule):
